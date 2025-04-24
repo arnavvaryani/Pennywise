@@ -1,13 +1,8 @@
-//
-//  PlaidManager.swift
-//  Pennywise
-//
-//  Created by Arnav Varyani on 4/24/25.
-//
-
 import SwiftUI
 import Combine
 import LinkKit
+import FirebaseAuth
+import FirebaseFirestore
 
 class PlaidManager: ObservableObject {
     static let shared = PlaidManager()
@@ -302,5 +297,305 @@ class PlaidManager: ObservableObject {
         transactions.removeAll { $0.accountId == id }
         calculateBudgetCategories(from: transactions)
         if accounts.isEmpty { UserDefaults.standard.set(false, forKey: "hasLinkedPlaidAccount") }
+    }
+    
+    // MARK: - Sync with Firestore
+    
+    /// Fetch account details with Firestore sync
+    func fetchAccountDetailsWithSync(token: String, completion: @escaping (Bool) -> Void) {
+        // First fetch from Plaid API
+        fetchAccountDetails(token: token)
+        
+        // After a short delay, check if we got accounts and call completion
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            if !self.accounts.isEmpty {
+                // Then sync to Firestore
+                PlaidFirestoreSync.shared.syncAccountsToFirestore { syncSuccess in
+                    completion(syncSuccess)
+                }
+            } else {
+                // If Plaid API fails, try to load from Firestore cache
+                self.loadAccountsFromFirestore { cacheSuccess in
+                    completion(cacheSuccess)
+                }
+            }
+        }
+    }
+    
+    /// Fetch transactions with Firestore sync
+    func fetchTransactionsWithSync(completion: @escaping (Bool) -> Void) {
+        // First fetch from Plaid API
+        fetchTransactions { [weak self] success in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            if success {
+                // Then sync to Firestore
+                PlaidFirestoreSync.shared.syncTransactionsToFirestore { syncSuccess in
+                    completion(syncSuccess)
+                }
+            } else {
+                // If Plaid API fails, try to load from Firestore cache
+                self.loadTransactionsFromFirestore { cacheSuccess in
+                    completion(cacheSuccess)
+                }
+            }
+        }
+    }
+    
+    /// Refresh all data with Firestore sync
+    func refreshAllDataWithSync() {
+        // Show loading state
+        isLoading = true
+        
+        // Perform full sync
+        PlaidFirestoreSync.shared.performFullSync { [weak self] success in
+            DispatchQueue.main.async {
+                self?.isLoading = false
+                self?.lastRefreshDate = Date()
+                
+                if !success {
+                    // If API sync fails, try loading from Firestore cache
+                    self?.loadFromFirestoreCache()
+                }
+            }
+        }
+    }
+    
+    // MARK: - Firestore Cache Loading
+    
+    /// Load accounts from Firestore cache
+    private func loadAccountsFromFirestore(completion: @escaping (Bool) -> Void) {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            completion(false)
+            return
+        }
+        
+        let db = Firestore.firestore()
+        db.collection("users/\(userId)/accounts").getDocuments { [weak self] snapshot, error in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            if let error = error {
+                self.error = .networkError(error)
+                completion(false)
+                return
+            }
+            
+            guard let documents = snapshot?.documents, !documents.isEmpty else {
+                completion(false)
+                return
+            }
+            
+            // Convert Firestore documents to PlaidAccount objects
+            let accounts = documents.compactMap { document -> PlaidAccount? in
+                guard
+                    let name = document.data()["name"] as? String,
+                    let type = document.data()["type"] as? String,
+                    let balance = document.data()["balance"] as? Double,
+                    let institutionName = document.data()["institutionName"] as? String
+                else {
+                    return nil
+                }
+                
+                return PlaidAccount(
+                    id: document.documentID,
+                    name: name,
+                    type: type,
+                    balance: balance,
+                    institutionName: institutionName,
+                    institutionLogo: nil,
+                    isPlaceholder: false
+                )
+            }
+            
+            if !accounts.isEmpty {
+                DispatchQueue.main.async {
+                    self.accounts = accounts
+                    completion(true)
+                }
+            } else {
+                completion(false)
+            }
+        }
+    }
+    
+    /// Load transactions from Firestore cache
+    private func loadTransactionsFromFirestore(completion: @escaping (Bool) -> Void) {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            completion(false)
+            return
+        }
+        
+        let db = Firestore.firestore()
+        db.collection("users/\(userId)/transactions")
+            .order(by: "date", descending: true)
+            .limit(to: 100) // Limit to most recent 100 transactions
+            .getDocuments { [weak self] snapshot, error in
+                guard let self = self else {
+                    completion(false)
+                    return
+                }
+                
+                if let error = error {
+                    self.error = .networkError(error)
+                    completion(false)
+                    return
+                }
+                
+                guard let documents = snapshot?.documents, !documents.isEmpty else {
+                    completion(false)
+                    return
+                }
+                
+                // Convert Firestore documents to PlaidTransaction objects
+                let transactions = documents.compactMap { document -> PlaidTransaction? in
+                    guard
+                        let name = document.data()["name"] as? String,
+                        let amount = document.data()["amount"] as? Double,
+                        let dateTimestamp = document.data()["date"] as? Timestamp,
+                        let category = document.data()["category"] as? String,
+                        let merchantName = document.data()["merchantName"] as? String,
+                        let accountId = document.data()["accountId"] as? String,
+                        let pending = document.data()["pending"] as? Bool
+                    else {
+                        return nil
+                    }
+                    
+                    return PlaidTransaction(
+                        id: document.documentID,
+                        name: name,
+                        amount: amount,
+                        date: dateTimestamp.dateValue(),
+                        category: category,
+                        merchantName: merchantName,
+                        accountId: accountId,
+                        pending: pending
+                    )
+                }
+                
+                if !transactions.isEmpty {
+                    DispatchQueue.main.async {
+                        self.transactions = transactions
+                        // Calculate budget categories based on these transactions
+                        self.calculateBudgetCategories(from: transactions)
+                        completion(true)
+                    }
+                } else {
+                    completion(false)
+                }
+            }
+    }
+    
+    /// Load all data from Firestore cache
+    private func loadFromFirestoreCache() {
+        loadAccountsFromFirestore { _ in
+            // After loading accounts, try to load transactions
+            self.loadTransactionsFromFirestore { _ in
+                // No further action needed, just used as a fallback
+            }
+        }
+    }
+    
+    // MARK: - Transaction Management with Firestore
+    
+    /// Add a new transaction with Firestore sync
+    func addTransaction(_ transaction: PlaidTransaction, completion: @escaping (Bool) -> Void) {
+        // Add to local state
+        transactions.insert(transaction, at: 0)
+        
+        // Update categories
+        calculateBudgetCategories(from: transactions)
+        
+        // Sync to Firestore
+        let firestoreManager = FirestoreManager.shared
+        firestoreManager.syncTransactions([transaction]) { success in
+            if success {
+                // Update budget usage after adding transaction
+                firestoreManager.updateBudgetUsage { _ in
+                    completion(success)
+                }
+            } else {
+                completion(false)
+            }
+        }
+    }
+    
+    /// Update a transaction's category with Firestore sync
+    func updateTransactionCategory(_ transaction: PlaidTransaction, newCategory: String, completion: @escaping (Bool) -> Void) {
+        // Update local state
+        if let index = transactions.firstIndex(where: { $0.id == transaction.id }) {
+            // Create a new transaction object with the updated category
+            let updatedTransaction = PlaidTransaction(
+                id: transaction.id,
+                name: transaction.name,
+                amount: transaction.amount,
+                date: transaction.date,
+                category: newCategory,  // New category
+                merchantName: transaction.merchantName,
+                accountId: transaction.accountId,
+                pending: transaction.pending
+            )
+            
+            transactions[index] = updatedTransaction
+            
+            // Update categories
+            calculateBudgetCategories(from: transactions)
+        }
+        
+        // Sync to Firestore
+        let firestoreSync = PlaidFirestoreSync.shared
+        firestoreSync.updateTransactionCategory(
+            transaction: transaction,
+            newCategory: newCategory,
+            completion: completion
+        )
+    }
+    
+    /// Add notes to a transaction with Firestore sync
+    func addTransactionNotes(_ transaction: PlaidTransaction, notes: String, completion: @escaping (Bool) -> Void) {
+        // Sync to Firestore
+        PlaidFirestoreSync.shared.updateTransactionDetails(
+            transaction: transaction,
+            notes: notes,
+            completion: completion
+        )
+    }
+    
+    /// Add tags to a transaction with Firestore sync
+    func addTransactionTags(_ transaction: PlaidTransaction, tags: [String], completion: @escaping (Bool) -> Void) {
+        // Sync to Firestore
+        PlaidFirestoreSync.shared.updateTransactionDetails(
+            transaction: transaction,
+            tags: tags,
+            completion: completion
+        )
+    }
+    
+    /// Hide a transaction with Firestore sync
+    func hideTransaction(_ transaction: PlaidTransaction, completion: @escaping (Bool) -> Void) {
+        // Update local state
+        if let index = transactions.firstIndex(where: { $0.id == transaction.id }) {
+            transactions.remove(at: index)
+            
+            // Update categories
+            calculateBudgetCategories(from: transactions)
+        }
+        
+        // Sync to Firestore
+        PlaidFirestoreSync.shared.updateTransactionDetails(
+            transaction: transaction,
+            isHidden: true,
+            completion: completion
+        )
     }
 }

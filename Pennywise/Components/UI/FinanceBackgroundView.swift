@@ -14,7 +14,7 @@ struct FinanceBackgroundView: View {
         ZStack {
             // Base gradient background
             LinearGradient(
-                gradient: Gradient(colors: [AppTheme.primary, Color("072E5F")]),
+                gradient: Gradient(colors: [AppTheme.primary, Color(hex:"072E5F")]),
                 startPoint: .top,
                 endPoint: .bottom
             )

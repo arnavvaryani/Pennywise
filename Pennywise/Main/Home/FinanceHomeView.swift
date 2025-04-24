@@ -87,7 +87,8 @@ struct EnhancedFinanceHomeView: View {
         }
         .sheet(isPresented: $showTransactionDetail) {
             if let transaction = selectedTransaction {
-                TransactionDetailView(transaction: transaction)
+                TransactionDetailViewFirestore(transaction: transaction)
+                    .environmentObject(plaidManager)
             }
         }
         .onAppear {

@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct BudgetCategory: Identifiable {
-    let id = UUID()
     let name: String
     var amount: Double
     let icon: String
