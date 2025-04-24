@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="23727" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23721"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <!--View Controller-->
+        <scene sceneID="EHf-IW-A2E">
+            <objects>
+                <viewController id="01J-lp-oVM" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="c9X-Bh-6aq" userLabel="Background View">
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                                <color key="backgroundColor" red="0.056000000000000001" green="0.14499999999999999" blue="0.28599999999999998" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                            </view>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="dollarsign.circle.fill" catalog="system" translatesAutoresizingMaskIntoConstraints="NO" id="PdA-UL-6YG">
+                                <rect key="frame" x="121.66666666666669" y="326" width="150" height="150"/>
+                                <color key="tintColor" red="0.498" green="0.90000000000000002" blue="0.376" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="150" id="6ee-kA-14i"/>
+                                    <constraint firstAttribute="height" constant="150" id="uOC-4d-Vba"/>
+                                </constraints>
+                                <preferredSymbolConfiguration key="preferredSymbolConfiguration" weight="bold"/>
+                            </imageView>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Pennywise" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="jhf-Ue-ydU">
+                                <rect key="frame" x="96.666666666666686" y="486" width="200" height="41"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="200" id="FrY-HA-rUI"/>
+                                </constraints>
+                                <fontDescription key="fontDescription" type="boldSystem" pointSize="34"/>
+                                <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Smart. Simple. Secure." textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="1gQ-Vw-J5J">
+                                <rect key="frame" x="96.666666666666686" y="535" width="200" height="21"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="200" id="8XM-C2-2rn"/>
+                                </constraints>
+                                <fontDescription key="fontDescription" type="system" weight="medium" pointSize="17"/>
+                                <color key="textColor" red="0.33700000000000002" green="0.83899999999999997" blue="0.85499999999999998" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="KqY-If-8oH" userLabel="Divider Line">
+                                <rect key="frame" x="146.66666666666666" y="569" width="100" height="1"/>
+                                <color key="backgroundColor" red="0.498" green="0.90000000000000002" blue="0.376" alpha="0.5" colorSpace="custom" customColorSpace="sRGB"/>
+                                <constraints>
+                                    <constraint firstAttribute="height" constant="1" id="7jK-1B-xL2"/>
+                                    <constraint firstAttribute="width" constant="100" id="nkG-yg-g1H"/>
+                                </constraints>
+                            </view>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Version 1.0" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="pee-3x-sBk">
+                                <rect key="frame" x="96.666666666666686" y="747" width="200" height="17"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="200" id="FKn-UO-qmF"/>
+                                </constraints>
+                                <fontDescription key="fontDescription" type="system" weight="light" pointSize="14"/>
+                                <color key="textColor" white="1" alpha="0.60362113610000001" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
+                        <color key="backgroundColor" red="0.056000000000000001" green="0.14499999999999999" blue="0.28599999999999998" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="jhf-Ue-ydU" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="2LQ-lK-TBE"/>
+                            <constraint firstItem="c9X-Bh-6aq" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" id="8xt-8j-ZVM"/>
+                            <constraint firstItem="1gQ-Vw-J5J" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="ATg-wL-qgh"/>
+                            <constraint firstItem="PdA-UL-6YG" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="GXJ-2L-Mw3"/>
+                            <constraint firstItem="1gQ-Vw-J5J" firstAttribute="top" secondItem="jhf-Ue-ydU" secondAttribute="bottom" constant="8" id="JUq-vK-oBf"/>
+                            <constraint firstItem="c9X-Bh-6aq" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" id="Myp-sS-hGn"/>
+                            <constraint firstItem="KqY-If-8oH" firstAttribute="top" secondItem="1gQ-Vw-J5J" secondAttribute="bottom" constant="13" id="Nig-hM-RJU"/>
+                            <constraint firstItem="jhf-Ue-ydU" firstAttribute="top" secondItem="PdA-UL-6YG" secondAttribute="bottom" constant="10" id="P9I-Av-Lc1"/>
+                            <constraint firstAttribute="trailing" secondItem="c9X-Bh-6aq" secondAttribute="trailing" id="WwH-vY-nEk"/>
+                            <constraint firstItem="PdA-UL-6YG" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" constant="-25" id="ajY-Xg-lkn"/>
+                            <constraint firstItem="KqY-If-8oH" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="bJy-dJ-HS0"/>
+                            <constraint firstAttribute="bottom" secondItem="c9X-Bh-6aq" secondAttribute="bottom" id="d7p-y0-Upr"/>
+                            <constraint firstItem="pee-3x-sBk" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="e9z-dL-VLz"/>
+                            <constraint firstItem="6Tk-OE-BBY" firstAttribute="bottom" secondItem="pee-3x-sBk" secondAttribute="bottom" constant="20" id="eCf-BF-LDm"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="53" y="375"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="dollarsign.circle.fill" catalog="system" width="128" height="123"/>
+    </resources>
+</document>
