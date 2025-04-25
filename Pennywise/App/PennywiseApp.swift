@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+
 @main
 struct PennywiseApp: App {
     // Firebase setup
@@ -35,6 +36,7 @@ struct PennywiseApp: App {
                     .onChange(of: scenePhase) { newPhase in
                         handleScenePhaseChange(newPhase)
                     }
+                 
                 
                 if launchScreenManager.showLaunchScreen {
                     LaunchScreenView()

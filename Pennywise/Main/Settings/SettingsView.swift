@@ -1,10 +1,3 @@
-//
-//  SettingsView.swift
-//  Pennywise
-//
-//  Created by Arnav Varyani on 4/10/25.
-//
-
 import SwiftUI
 import LocalAuthentication
 
@@ -16,21 +9,16 @@ struct SettingsView: View {
     // User preferences
     @AppStorage("biometricAuthEnabled") private var biometricAuthEnabled = true
     @AppStorage("requireBiometricsOnOpen") private var requireBiometricsOnOpen = true
-    @AppStorage("requireBiometricsForTransactions") private var requireBiometricsForTransactions = true
     
     // Notifications
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
     @AppStorage("budgetAlertNotifications") private var budgetAlertNotifications = true
-    @AppStorage("transactionNotifications") private var transactionNotifications = true
-    @AppStorage("weeklyReportNotifications") private var weeklyReportNotifications = true
     
     // Display preferences
-    @AppStorage("defaultCurrency") private var currency = "USD"
     @AppStorage("showBalanceOnHomeScreen") private var showBalanceOnHomeScreen = true
     
     // Budget preferences
     @AppStorage("budgetCycleStartDay") private var budgetCycleStartDay = 1
-    @AppStorage("savingsGoalPercentage") private var savingsGoalPercentage = 20.0
     
     // States
     @State private var showingSignOutAlert = false
@@ -43,9 +31,8 @@ struct SettingsView: View {
     @State private var showingEditProfileSheet = false
     
     // Lists for pickers
-    let currencies = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CNY", "INR"]
-    let availableBiometrics: BiometricType = AuthenticationService.shared.getBiometricType()
     let monthDays = Array(1...31).map { String($0) }
+    let availableBiometrics: BiometricType = AuthenticationService.shared.getBiometricType()
     
     var body: some View {
         ZStack {
@@ -61,9 +48,6 @@ struct SettingsView: View {
                     
                     // Account section
                     accountSection
-                    
-                    // Plaid accounts section
-                    plaidAccountsSection
                     
                     // Security section (with fixed biometrics)
                     securitySection
@@ -136,54 +120,46 @@ struct SettingsView: View {
         VStack(spacing: 16) {
             sectionHeader("Profile")
             
-            Button(action: {
-                showingEditProfileSheet = true
-            }) {
-                HStack(spacing: 20) {
-                    // Profile image
-                    ZStack {
-                        Circle()
-                            .fill(AppTheme.accentPurple.opacity(0.3))
-                            .frame(width: 75, height: 75)
-                        
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(AppTheme.textColor)
-                    }
+            // Non-clickable profile card
+            HStack(spacing: 20) {
+                // Profile image
+                ZStack {
+                    Circle()
+                        .fill(AppTheme.accentPurple.opacity(0.3))
+                        .frame(width: 75, height: 75)
                     
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(authService.user?.displayName ?? "User")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Text(authService.user?.email ?? "email@example.com")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.textColor.opacity(0.7))
-                        
-                        // Added since last login text
-                        if let lastLogin = authService.user?.metadata.lastSignInDate {
-                            Text("Last login: \(formatDate(lastLogin))")
-                                .font(.caption)
-                                .foregroundColor(AppTheme.textColor.opacity(0.6))
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(AppTheme.textColor.opacity(0.5))
-                        .font(.system(size: 14))
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 32))
+                        .foregroundColor(AppTheme.textColor)
                 }
-                .padding()
-                .background(AppTheme.cardBackground)
-                .cornerRadius(20)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(AppTheme.cardStroke, lineWidth: 1)
-                )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(authService.user?.displayName ?? "User")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(AppTheme.textColor)
+                    
+                    Text(authService.user?.email ?? "email@example.com")
+                        .font(.subheadline)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    
+                    // Added since last login text
+                    if let lastLogin = authService.user?.metadata.lastSignInDate {
+                        Text("Last login: \(formatDate(lastLogin))")
+                            .font(.caption)
+                            .foregroundColor(AppTheme.textColor.opacity(0.6))
+                    }
+                }
+                
+                Spacer()
             }
-            .buttonStyle(PlainButtonStyle())
+            .padding()
+            .background(AppTheme.cardBackground)
+            .cornerRadius(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(AppTheme.cardStroke, lineWidth: 1)
+            )
         }
     }
     
@@ -240,17 +216,6 @@ struct SettingsView: View {
                 Divider()
                     .background(AppTheme.textColor.opacity(0.1))
                 
-                settingsButton(
-                    title: "Linked Accounts",
-                    icon: "link",
-                    detailText: "\(plaidManager.accounts.count) accounts"
-                ) {
-                    // Show linked accounts
-                }
-                
-                Divider()
-                    .background(AppTheme.textColor.opacity(0.1))
-                
                 Button(action: {
                     showingDeleteAccountAlert = true
                 }) {
@@ -271,116 +236,6 @@ struct SettingsView: View {
         }
     }
     
-    // MARK: - Plaid Accounts Section
-    private var plaidAccountsSection: some View {
-        VStack(spacing: 16) {
-            sectionHeader("Linked Financial Accounts")
-            
-            if plaidManager.accounts.isEmpty {
-                settingsCard {
-                    HStack {
-                        Image(systemName: "building.columns")
-                            .font(.system(size: 22))
-                            .foregroundColor(AppTheme.accentBlue)
-                            .frame(width: 36)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("No accounts connected")
-                                .foregroundColor(AppTheme.textColor)
-                            
-                            Text("Link your bank accounts to track transactions automatically")
-                                .font(.caption)
-                                .foregroundColor(AppTheme.textColor.opacity(0.6))
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding(.vertical, 12)
-                    
-                    Button(action: {
-                        plaidManager.presentLink()
-                    }) {
-                        Text("Connect Account")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(AppTheme.backgroundColor)
-                            .padding(.vertical, 10)
-                            .frame(maxWidth: .infinity)
-                            .background(AppTheme.primaryGreen)
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(ScaleButtonStyle())
-                    .padding(.top, 8)
-                }
-            } else {
-                VStack(spacing: 12) {
-                    ForEach(plaidManager.accounts) { account in
-                        HStack(spacing: 15) {
-                            // Bank icon
-                            ZStack {
-                                Circle()
-                                    .fill(AppTheme.accentBlue.opacity(0.2))
-                                    .frame(width: 40, height: 40)
-                                
-                                if let logo = account.institutionLogo {
-                                    Image(uiImage: logo)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 25, height: 25)
-                                } else {
-                                    Image(systemName: "building.columns")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(AppTheme.accentBlue)
-                                }
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(account.name)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Text(account.institutionName)
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            }
-                            
-                            Spacer()
-                            
-                            Text("$\(String(format: "%.2f", account.balance))")
-                                .font(.headline)
-                                .foregroundColor(account.balance >= 0 ? AppTheme.primaryGreen : AppTheme.expenseColor)
-                        }
-                        .padding()
-                        .background(AppTheme.cardBackground)
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(AppTheme.cardStroke, lineWidth: 1)
-                        )
-                    }
-                    
-                    Button(action: {
-                        plaidManager.presentLink()
-                    }) {
-                        HStack {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(AppTheme.primaryGreen)
-                            
-                            Text("Add Account")
-                                .foregroundColor(AppTheme.textColor)
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(AppTheme.primaryGreen.opacity(0.2))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(ScaleButtonStyle())
-                }
-            }
-        }
-    }
-    
     // MARK: - Security Section
     private var securitySection: some View {
         VStack(spacing: 16) {
@@ -395,6 +250,10 @@ struct SettingsView: View {
                         icon: availableBiometrics == .faceID ? "faceid" : "touchid"
                     ) {
                         checkAndEnableBiometrics(isEnabled: biometricAuthEnabled)
+                        // If biometrics are enabled, also enable on app launch
+                        if biometricAuthEnabled {
+                            requireBiometricsOnOpen = true
+                        }
                     }
                     
                     if biometricAuthEnabled {
@@ -406,16 +265,6 @@ struct SettingsView: View {
                             subtitle: "Verify identity each time you open the app",
                             isOn: $requireBiometricsOnOpen,
                             icon: "app.fill"
-                        )
-                        
-                        Divider()
-                            .background(AppTheme.textColor.opacity(0.1))
-                        
-                        settingsToggle(
-                            title: "Require for Transactions",
-                            subtitle: "Verify identity before making transactions",
-                            isOn: $requireBiometricsForTransactions,
-                            icon: "creditcard.fill"
                         )
                     }
                 } else {
@@ -466,26 +315,6 @@ struct SettingsView: View {
                         isOn: $budgetAlertNotifications,
                         icon: "chart.pie.fill"
                     )
-                    
-                    Divider()
-                        .background(AppTheme.textColor.opacity(0.1))
-                    
-                    settingsToggle(
-                        title: "Transaction Alerts",
-                        subtitle: "Get notified about new transactions",
-                        isOn: $transactionNotifications,
-                        icon: "creditcard.fill"
-                    )
-                    
-                    Divider()
-                        .background(AppTheme.textColor.opacity(0.1))
-                    
-                    settingsToggle(
-                        title: "Weekly Reports",
-                        subtitle: "Get weekly spending and saving reports",
-                        isOn: $weeklyReportNotifications,
-                        icon: "doc.text.fill"
-                    )
                 }
             }
         }
@@ -497,52 +326,6 @@ struct SettingsView: View {
             sectionHeader("Display Preferences")
             
             settingsCard {
-                // Currency selector
-                HStack {
-                    Image(systemName: "dollarsign.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(AppTheme.primaryGreen)
-                        .frame(width: 36)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Default Currency")
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Text("Used throughout the app")
-                            .font(.caption)
-                            .foregroundColor(AppTheme.textColor.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                    
-                    Menu {
-                        ForEach(currencies, id: \.self) { currencyOption in
-                            Button {
-                                currency = currencyOption
-                            } label: {
-                                Text(currencyOption)
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Text(currency)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            
-                            Image(systemName: "chevron.down")
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                                .font(.system(size: 14))
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(AppTheme.accentPurple.opacity(0.2))
-                        .cornerRadius(8)
-                    }
-                }
-                .padding(.vertical, 12)
-                
-                Divider()
-                    .background(AppTheme.textColor.opacity(0.1))
-                
                 // Show balance on home screen
                 settingsToggle(
                     title: "Show Balance on Home Screen",
@@ -600,39 +383,6 @@ struct SettingsView: View {
                         .background(AppTheme.accentPurple.opacity(0.2))
                         .cornerRadius(8)
                     }
-                }
-                .padding(.vertical, 12)
-                
-                Divider()
-                    .background(AppTheme.textColor.opacity(0.1))
-                
-                // Savings goal percentage
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Image(systemName: "chart.bar.fill")
-                            .font(.system(size: 22))
-                            .foregroundColor(AppTheme.primaryGreen)
-                            .frame(width: 36)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Savings Goal")
-                                .foregroundColor(AppTheme.textColor)
-                            
-                            Text("Percentage of income to save each month")
-                                .font(.caption)
-                                .foregroundColor(AppTheme.textColor.opacity(0.6))
-                        }
-                    }
-                    
-                    HStack {
-                        Slider(value: $savingsGoalPercentage, in: 5...50, step: 1)
-                            .accentColor(AppTheme.primaryGreen)
-                        
-                        Text("\(Int(savingsGoalPercentage))%")
-                            .foregroundColor(AppTheme.textColor)
-                            .frame(width: 50)
-                    }
-                    .padding(.leading, 36)
                 }
                 .padding(.vertical, 12)
             }
@@ -1073,7 +823,6 @@ struct SettingsView: View {
                 biometricErrorMessage = "Biometric authentication is not available: \(error.localizedDescription)"
                 biometricAuthEnabled = false
                 requireBiometricsOnOpen = false
-                requireBiometricsForTransactions = false
             }
         }
     }
@@ -1103,4 +852,3 @@ struct SettingsView: View {
         }
     }
 }
-

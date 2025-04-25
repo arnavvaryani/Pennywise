@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct InsightsView: View {
     @EnvironmentObject var plaidManager: PlaidManager
@@ -8,6 +9,7 @@ struct InsightsView: View {
     @State private var selectedTab = 0
     @State private var isRefreshing = false
     @State private var showingSavingsTips = false
+    @State private var selectedCategoryIndex: Int? = nil
     
     // Tab options
     let tabs = ["Overview", "Spending", "Income", "Categories"]
@@ -77,6 +79,32 @@ struct InsightsView: View {
     
     private var netCashflow: Double {
         totalIncome - totalSpending
+    }
+    
+    // Data for pie chart
+    private var pieChartData: [PieChartDataPoint] {
+        categoryBreakdown.map { category in
+            PieChartDataPoint(
+                category: category.0,
+                amount: category.1,
+                color: categoryColor(for: category.0)
+            )
+        }
+    }
+    
+    // Income sources breakdown
+    private var incomeSources: [(String, Double)] {
+        // Group income transactions by merchant name or type
+        var sources: [String: Double] = [:]
+        
+        for transaction in incomeTransactions {
+            // Use merchant name or a default if empty
+            let source = transaction.merchantName.isEmpty ? "Primary Income" : transaction.merchantName
+            sources[source, default: 0] += abs(transaction.amount)
+        }
+        
+        return sources.map { ($0.key, $0.value) }
+            .sorted { $0.1 > $1.1 }
     }
     
     var body: some View {
@@ -150,7 +178,11 @@ struct InsightsView: View {
             
             // Timeframe selector
             HStack(spacing: 0) {
-                Button(action: { selectedTimeframe = .week }) {
+                Button(action: {
+                    withAnimation {
+                        selectedTimeframe = .week
+                    }
+                }) {
                     Text("Week")
                         .font(.footnote)
                         .padding(.vertical, 6)
@@ -160,7 +192,11 @@ struct InsightsView: View {
                         .cornerRadius(20)
                 }
                 
-                Button(action: { selectedTimeframe = .month }) {
+                Button(action: {
+                    withAnimation {
+                        selectedTimeframe = .month
+                    }
+                }) {
                     Text("Month")
                         .font(.footnote)
                         .padding(.vertical, 6)
@@ -170,7 +206,11 @@ struct InsightsView: View {
                         .cornerRadius(20)
                 }
                 
-                Button(action: { selectedTimeframe = .year }) {
+                Button(action: {
+                    withAnimation {
+                        selectedTimeframe = .year
+                    }
+                }) {
                     Text("Year")
                         .font(.footnote)
                         .padding(.vertical, 6)
@@ -188,36 +228,31 @@ struct InsightsView: View {
     // MARK: - Tab Selector
     
     private var tabSelectorView: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 16) {
-                ForEach(0..<tabs.count, id: \.self) { index in
-                    Button(action: {
-                        withAnimation {
-                            selectedTab = index
-                        }
-                    }) {
-                        VStack(spacing: 8) {
-                            Text(tabs[index])
-                                .font(.system(size: 16, weight: selectedTab == index ? .semibold : .regular))
-                                .foregroundColor(selectedTab == index ? AppTheme.primaryGreen : AppTheme.textColor.opacity(0.6))
-                            
-                            if selectedTab == index {
-                                Rectangle()
-                                    .fill(AppTheme.primaryGreen)
-                                    .frame(height: 3)
-                                    .matchedGeometryEffect(id: "activeTab", in: namespace)
-                            } else {
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(height: 3)
-                            }
-                        }
+        HStack(spacing: 0) {
+            ForEach(0..<tabs.count, id: \.self) { index in
+                Button(action: {
+                    withAnimation {
+                        selectedTab = index
                     }
-                    .buttonStyle(PlainButtonStyle())
+                }) {
+                    Text(tabs[index])
+                        .font(.subheadline)
+                        .fontWeight(selectedTab == index ? .semibold : .regular)
+                        .foregroundColor(selectedTab == index ? .white : AppTheme.textColor.opacity(0.6))
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            selectedTab == index ?
+                            AppTheme.primaryGreen :
+                            AppTheme.cardBackground
+                        )
+                        .cornerRadius(12)
                 }
             }
-            .padding(.horizontal)
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .background(Color.clear)
     }
     
     // For the matched geometry effect
@@ -249,7 +284,7 @@ struct InsightsView: View {
                 .font(.system(size: 70))
                 .foregroundColor(AppTheme.accentBlue.opacity(0.7))
             
-            Text("No data yet")
+            Text("No data for \(timeframeTitle.lowercased())")
                 .font(.title3)
                 .fontWeight(.semibold)
                 .foregroundColor(AppTheme.textColor)
@@ -309,8 +344,8 @@ struct InsightsView: View {
             spendingSummaryCard
                 .padding(.horizontal)
             
-            // Spending by category
-            categoryBreakdownCard
+            // Category breakdown card - now with actual pie chart
+            enhancedCategoryBreakdownCard
                 .padding(.horizontal)
             
             // Recent transactions list
@@ -326,8 +361,8 @@ struct InsightsView: View {
             incomeSummaryCard
                 .padding(.horizontal)
             
-            // Income distribution
-            incomeDistributionCard
+            // Income distribution - showing actual Plaid data
+            enhancedIncomeDistributionCard
                 .padding(.horizontal)
         }
     }
@@ -371,7 +406,7 @@ struct InsightsView: View {
     // Financial snapshot card
     private var financialSnapshotCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Financial Summary")
+            Text("Financial Summary - \(timeframeTitle)")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
@@ -503,6 +538,83 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
+    /// Generate a list of savings tips based on transaction history
+    func generateSavingsTips(from transactions: [PlaidTransaction]) -> [(title: String, description: String, icon: String)] {
+        var tips: [(title: String, description: String, icon: String)] = []
+        
+        // Group transactions by category
+        let categorySpending = Dictionary(
+            grouping: transactions.filter { $0.amount > 0 },
+            by: { $0.category }
+        )
+        
+        // Find top spending categories
+        let sortedCategories = categorySpending.sorted {
+            $0.value.reduce(0) { $0 + $1.amount } > $1.value.reduce(0) { $0 + $1.amount }
+        }
+        
+        // Tip for highest spending category
+        if let topCategory = sortedCategories.first {
+            let totalSpent = topCategory.value.reduce(0) { $0 + $1.amount }
+            let potentialSavings = totalSpent * 0.15 // 15% reduction potential
+            
+            tips.append((
+                title: "Reduce \(topCategory.key) Spending",
+                description: "You've spent $\(String(format: "%.2f", totalSpent)) on \(topCategory.key) \(timeframeTitle.lowercased()). Consider cutting back by 15%, which could save you $\(String(format: "%.2f", potentialSavings)).",
+                icon: "dollarsign.circle"
+            ))
+        }
+        
+        // Tip for dining out
+        let diningTransactions = transactions.filter {
+            $0.category.lowercased().contains("food") ||
+            $0.category.lowercased().contains("restaurant")
+        }
+        
+        if !diningTransactions.isEmpty {
+            let totalDining = diningTransactions.reduce(0) { $0 + $1.amount }
+            let potentialSavings = totalDining * 0.2 // 20% reduction potential
+            
+            tips.append((
+                title: "Cook More, Eat Out Less",
+                description: "You spent $\(String(format: "%.2f", totalDining)) on dining out \(timeframeTitle.lowercased()). Cooking at home 2-3 more times a week could save you $\(String(format: "%.2f", potentialSavings)).",
+                icon: "fork.knife"
+            ))
+        }
+        
+        // Tip for subscriptions
+        let subscriptionTransactions = transactions.filter { transaction in
+            transaction.amount >= 5 && transaction.amount <= 50 &&
+            (transaction.merchantName.lowercased().contains("netflix") ||
+             transaction.merchantName.lowercased().contains("spotify") ||
+             transaction.merchantName.lowercased().contains("hulu") ||
+             transaction.merchantName.lowercased().contains("disney") ||
+             transaction.merchantName.lowercased().contains("apple") ||
+             transaction.merchantName.lowercased().contains("amazon"))
+        }
+        
+        if !subscriptionTransactions.isEmpty {
+            let totalSubscriptions = subscriptionTransactions.reduce(0) { $0 + $1.amount }
+            
+            tips.append((
+                title: "Review Subscriptions",
+                description: "You have \(subscriptionTransactions.count) potential subscriptions costing $\(String(format: "%.2f", totalSubscriptions)) \(timeframeTitle == "This Week" ? "weekly" : timeframeTitle == "This Month" ? "monthly" : "yearly"). Consider canceling unused services.",
+                icon: "repeat"
+            ))
+        }
+        
+        // Ensure we have at least one tip
+        if tips.isEmpty {
+            tips.append((
+                title: "Keep Tracking Your Spending",
+                description: "Continue monitoring your expenses \(timeframeTitle.lowercased()) to find more savings opportunities.",
+                icon: "chart.bar.fill"
+            ))
+        }
+        
+        return tips
+    }
+    
     // Savings insights card
     private var savingsInsightsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -527,7 +639,9 @@ struct InsightsView: View {
             }
             
             if showingSavingsTips {
-                ForEach(savingsTips, id: \.title) { tip in
+                let savingsTips = generateSavingsTips(from: transactionsInTimeframe)
+                
+                ForEach(Array(savingsTips.enumerated()), id: \.offset) { _, tip in
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: tip.icon)
                             .foregroundColor(AppTheme.primaryGreen)
@@ -578,7 +692,7 @@ struct InsightsView: View {
     // Spending summary card
     private var spendingSummaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Spending Summary")
+            Text("Spending Summary - \(timeframeTitle)")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
@@ -616,38 +730,76 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
-    // Category breakdown card
-    private var categoryBreakdownCard: some View {
+    // Enhanced category breakdown card with actual pie chart
+    private var enhancedCategoryBreakdownCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Spending by Category")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
-            ZStack {
-                if categoryBreakdown.isEmpty {
-                    Text("No category data for this period")
-                        .font(.subheadline)
-                        .foregroundColor(AppTheme.textColor.opacity(0.7))
-                        .frame(height: 200)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    VStack {
-                        // This would be your actual pie chart in a real implementation
-                        Image(systemName: "chart.pie.fill")
-                            .font(.system(size: 50))
-                            .foregroundColor(AppTheme.accentBlue.opacity(0.7))
-                        
-                        Text("Category Breakdown Chart")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.textColor.opacity(0.7))
+            if !categoryBreakdown.isEmpty {
+                VStack(spacing: 16) {
+                    // Actual Pie Chart
+                    CategoryPieChartView(
+                        dataPoints: pieChartData,
+                        totalAmount: totalSpending,
+                        selectedIndex: $selectedCategoryIndex
+                    )
+                    .frame(height: 250)
+                    .padding(.vertical)
+                    
+                    // Category Legend
+                    VStack(spacing: 12) {
+                        ForEach(pieChartData.indices, id: \.self) { index in
+                            let dataPoint = pieChartData[index]
+                            HStack {
+                                Circle()
+                                    .fill(dataPoint.color)
+                                    .frame(width: 12, height: 12)
+                                
+                                Text(dataPoint.category)
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Spacer()
+                                
+                                Text("$\(dataPoint.amount, specifier: "%.0f")")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Text("(\(Int(dataPoint.amount / totalSpending * 100))%)")
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                            .background(selectedCategoryIndex == index ? dataPoint.color.opacity(0.1) : Color.clear)
+                            .cornerRadius(8)
+                            .onTapGesture {
+                                withAnimation {
+                                    if selectedCategoryIndex == index {
+                                        selectedCategoryIndex = nil
+                                    } else {
+                                        selectedCategoryIndex = index
+                                    }
+                                }
+                            }
+                        }
                     }
+                }
+                .padding()
+                .background(AppTheme.cardBackground)
+                .cornerRadius(12)
+            } else {
+                Text("No category data for this period")
+                    .font(.subheadline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.7))
                     .frame(height: 200)
                     .frame(maxWidth: .infinity)
-                }
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(12)
             }
-            .padding()
-            .background(AppTheme.cardBackground)
-            .cornerRadius(12)
         }
         .padding()
         .background(AppTheme.cardBackground.opacity(0.3))
@@ -684,7 +836,7 @@ struct InsightsView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(transaction.name)
+                            Text(transaction.merchantName)
                                 .font(.subheadline)
                                 .foregroundColor(AppTheme.textColor)
                             
@@ -714,7 +866,7 @@ struct InsightsView: View {
     // Income summary card
     private var incomeSummaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Income Summary")
+            Text("Income Summary - \(timeframeTitle)")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
@@ -752,14 +904,103 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
-    // Income distribution card
-    private var incomeDistributionCard: some View {
+    // Enhanced income distribution card
+    private var enhancedIncomeDistributionCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Income Sources")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
-            if incomeTransactions.isEmpty {
+            if !incomeTransactions.isEmpty {
+                // Show actual income sources from Plaid data
+                VStack(spacing: 15) {
+                    if !incomeSources.isEmpty {
+                        ForEach(incomeSources.prefix(5), id: \.0) { source, amount in
+                            HStack(spacing: 15) {
+                                // Source icon
+                                ZStack {
+                                    Circle()
+                                        .fill(sourceColor(for: source).opacity(0.2))
+                                        .frame(width: 40, height: 40)
+                                    
+                                    Image(systemName: sourceIcon(for: source))
+                                        .font(.system(size: 18))
+                                        .foregroundColor(sourceColor(for: source))
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(source)
+                                        .font(.subheadline)
+                                        .foregroundColor(AppTheme.textColor)
+                                    
+                                    // Progress bar
+                                    ZStack(alignment: .leading) {
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(AppTheme.cardBackground)
+                                            .frame(height: 6)
+                                        
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(sourceColor(for: source))
+                                            .frame(width: totalIncome > 0
+                                                   ? CGFloat(amount / totalIncome) * 150
+                                                   : 0,
+                                                   height: 6)
+                                    }
+                                    .frame(width: 150)
+                                }
+                                
+                                Spacer()
+                                
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text("$\(amount, specifier: "%.0f")")
+                                        .font(.headline)
+                                        .foregroundColor(AppTheme.textColor)
+                                    
+                                    Text("\(Int(amount / totalIncome * 100))%")
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                }
+                            }
+                            .padding()
+                            .background(AppTheme.cardBackground)
+                            .cornerRadius(12)
+                        }
+                    } else {
+                        // Fallback for when we can't determine sources
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(AppTheme.primaryGreen.opacity(0.2))
+                                    .frame(width: 40, height: 40)
+                                
+                                Image(systemName: "briefcase.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(AppTheme.primaryGreen)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Total Income")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Text("100% of total income")
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
+                            }
+                            
+                            Spacer()
+                            
+                            Text("$\(totalIncome, specifier: "%.0f")")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(AppTheme.primaryGreen)
+                        }
+                        .padding()
+                        .background(AppTheme.cardBackground)
+                        .cornerRadius(12)
+                    }
+                }
+            } else {
                 Text("No income data for this period")
                     .font(.subheadline)
                     .foregroundColor(AppTheme.textColor.opacity(0.7))
@@ -767,77 +1008,13 @@ struct InsightsView: View {
                     .padding()
                     .background(AppTheme.cardBackground)
                     .cornerRadius(12)
-            } else {
-                // Sample income sources (in a real app, this would be derived from data)
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(AppTheme.primaryGreen.opacity(0.2))
-                            .frame(width: 40, height: 40)
-                        
-                        Image(systemName: "briefcase.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(AppTheme.primaryGreen)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Primary Income")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Text("85% of total income")
-                            .font(.caption)
-                            .foregroundColor(AppTheme.textColor.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                    
-                    Text("$\(totalIncome * 0.85, specifier: "%.0f")")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(AppTheme.primaryGreen)
-                }
-                .padding()
-                .background(AppTheme.cardBackground)
-                .cornerRadius(12)
-                
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(AppTheme.accentBlue.opacity(0.2))
-                            .frame(width: 40, height: 40)
-                        
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(AppTheme.accentBlue)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Other Sources")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Text("15% of total income")
-                            .font(.caption)
-                            .foregroundColor(AppTheme.textColor.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                    
-                    Text("$\(totalIncome * 0.15, specifier: "%.0f")")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(AppTheme.accentBlue)
-                }
-                .padding()
-                .background(AppTheme.cardBackground)
-                .cornerRadius(12)
             }
         }
         .padding()
         .background(AppTheme.cardBackground.opacity(0.3))
         .cornerRadius(20)
     }
+
     
     // Category card for the Categories tab
     private func categoryCard(name: String, amount: Double) -> some View {
@@ -912,6 +1089,10 @@ struct InsightsView: View {
         if c.contains("health") || c.contains("medical") { return "heart.fill" }
         if c.contains("utility") || c.contains("bill") { return "bolt.fill" }
         if c.contains("income") || c.contains("deposit") { return "arrow.down.circle.fill" }
+        if c.contains("subscription") { return "repeat" }
+        if c.contains("housing") || c.contains("rent") || c.contains("mortgage") { return "house.fill" }
+        if c.contains("education") { return "book.fill" }
+        if c.contains("personal") { return "person.fill" }
         return "dollarsign.circle"
     }
     
@@ -930,6 +1111,14 @@ struct InsightsView: View {
             return Color(hex: "#FF5757")
         } else if c.contains("utility") || c.contains("bill") {
             return Color(hex: "#9370DB")
+        } else if c.contains("housing") || c.contains("rent") || c.contains("mortgage") {
+            return Color(hex: "#CD853F")
+        } else if c.contains("education") {
+            return Color(hex: "#4682B4")
+        } else if c.contains("personal") {
+            return Color(hex: "#FF7F50")
+        } else if c.contains("subscription") {
+            return Color(hex: "#BA55D3")
         } else {
             // Use a deterministic color based on the category name
             let hash = category.hashValue
@@ -941,34 +1130,149 @@ struct InsightsView: View {
         }
     }
     
-    // Sample savings tips
-    private var savingsTips: [(title: String, description: String, icon: String)] {
-        [
-            (
-                title: "Reduce dining out",
-                description: "Eating at home more often could save you up to $200 per month based on your current spending patterns.",
-                icon: "fork.knife"
-            ),
-            (
-                title: "Review subscriptions",
-                description: "You have several subscription services that could be consolidated or reduced.",
-                icon: "creditcard.fill"
-            ),
-            (
-                title: "Use public transport",
-                description: "Consider using public transportation for your daily commute to save on fuel costs.",
-                icon: "car.fill"
-            )
-        ]
+    // Income source icon
+    private func sourceIcon(for source: String) -> String {
+        let s = source.lowercased()
+        if s.contains("salary") || s.contains("payroll") || s.contains("income") || s.contains("primary") {
+            return "briefcase.fill"
+        }
+        if s.contains("dividend") || s.contains("interest") || s.contains("investment") {
+            return "chart.line.uptrend.xyaxis"
+        }
+        if s.contains("gift") {
+            return "gift.fill"
+        }
+        if s.contains("refund") || s.contains("return") {
+            return "arrow.counterclockwise"
+        }
+        if s.contains("transfer") {
+            return "arrow.left.arrow.right"
+        }
+        return "dollarsign.square.fill"
+    }
+    
+    // Income source color
+    private func sourceColor(for source: String) -> Color {
+        let s = source.lowercased()
+        if s.contains("salary") || s.contains("payroll") || s.contains("income") || s.contains("primary") {
+            return AppTheme.primaryGreen
+        }
+        if s.contains("dividend") || s.contains("interest") || s.contains("investment") {
+            return Color(hex: "#4682B4")
+        }
+        if s.contains("gift") {
+            return Color(hex: "#FF69B4")
+        }
+        if s.contains("refund") || s.contains("return") {
+            return AppTheme.accentBlue
+        }
+        if s.contains("transfer") {
+            return AppTheme.accentPurple
+        }
+        
+        // Use a deterministic color based on the source name
+        let hash = source.hashValue
+        return Color(
+            hue: Double(abs(hash % 256)) / 256.0,
+            saturation: 0.7,
+            brightness: 0.8
+        )
     }
 }
 
-struct InsightsView_Previews: PreviewProvider {
-    static var previews: some View {
-        NavigationView {
-            InsightsView()
-                .environmentObject(PlaidManager.shared)
+// MARK: - Supporting Views
+
+// Data structure for pie chart
+struct PieChartDataPoint: Identifiable {
+    var id = UUID()
+    let category: String
+    let amount: Double
+    let color: Color
+}
+
+// Category Pie Chart View
+struct CategoryPieChartView: View {
+    let dataPoints: [PieChartDataPoint]
+    let totalAmount: Double
+    @Binding var selectedIndex: Int?
+    
+    var body: some View {
+        ZStack {
+            // The pie chart
+            GeometryReader { geometry in
+                ZStack(alignment: .center) {
+                    ForEach(dataPoints.indices, id: \.self) { index in
+                        PieSlice(
+                            startAngle: startAngle(at: index),
+                            endAngle: endAngle(at: index)
+                        )
+                        .fill(dataPoints[index].color)
+                        .scaleEffect(selectedIndex == index ? 1.05 : 1.0)
+                        .animation(.spring(), value: selectedIndex)
+                        .onTapGesture {
+                            withAnimation {
+                                if selectedIndex == index {
+                                    selectedIndex = nil
+                                } else {
+                                    selectedIndex = index
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Center circle
+                    Circle()
+                        .fill(AppTheme.cardBackground.opacity(0.8))
+                        .frame(width: min(geometry.size.width, geometry.size.height) * 0.5)
+                    
+                    // Text in center
+                    VStack(spacing: 4) {
+                        if let selectedIndex = selectedIndex {
+                            let dataPoint = dataPoints[selectedIndex]
+                            Text(dataPoint.category)
+                                .font(.headline)
+                                .foregroundColor(AppTheme.textColor)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: false, vertical: true)
+                            
+                            Text("$\(dataPoint.amount, specifier: "%.0f")")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(dataPoint.color)
+                            
+                            Text("\(Int(dataPoint.amount / totalAmount * 100))%")
+                                .font(.caption)
+                                .foregroundColor(AppTheme.textColor.opacity(0.7))
+                        } else {
+                            Text("$\(totalAmount, specifier: "%.0f")")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(AppTheme.textColor)
+                            
+                            Text("Total")
+                                .font(.caption)
+                                .foregroundColor(AppTheme.textColor.opacity(0.7))
+                        }
+                    }
+                    .padding()
+                    .multilineTextAlignment(.center)
+                }
+                .frame(width: min(geometry.size.width, geometry.size.height), height: min(geometry.size.width, geometry.size.height))
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            }
         }
-        .preferredColorScheme(.dark)
+    }
+    
+    private func startAngle(at index: Int) -> Angle {
+        let precedingSum = dataPoints.prefix(index).reduce(0) { $0 + $1.amount }
+        return .degrees(precedingSum / totalAmount * 360 - 90)
+    }
+    
+    private func endAngle(at index: Int) -> Angle {
+        let precedingSum = dataPoints.prefix(index).reduce(0) { $0 + $1.amount }
+        let currentAmount = dataPoints[index].amount
+        return .degrees((precedingSum + currentAmount) / totalAmount * 360 - 90)
     }
 }
+
+

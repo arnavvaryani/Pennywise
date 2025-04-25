@@ -42,7 +42,7 @@ class TransactionViewModel: ObservableObject {
     
     init() {
         // Set up data validation
-        setupValidation()
+       // setupValidation()
     }
     
     private func setupValidation() {

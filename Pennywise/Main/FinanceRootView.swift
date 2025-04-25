@@ -24,7 +24,7 @@ struct FinanceRootView: View {
                 TabView(selection: $selectedTab) {
                     // Home Tab
                     NavigationView {
-                        EnhancedFinanceHomeView()
+                        FinanceHomeView()
                             .navigationTitle("Home")
                             .navigationBarTitleDisplayMode(.inline)
                     }
@@ -43,12 +43,12 @@ struct FinanceRootView: View {
                         .tag(2)
                     
                     // Budget Tab
-//                    NavigationView {
-//                        BudgetPlannerView()
-//                            .navigationTitle("Budget")
-//                            .navigationBarTitleDisplayMode(.inline)
-//                    }
-//                    .tag(3)
+                    NavigationView {
+                        BudgetPlannerView()
+                            .navigationTitle("Budget")
+                            .navigationBarTitleDisplayMode(.inline)
+                    }
+                    .tag(3)
                     
                     // Settings Tab
                     NavigationView {

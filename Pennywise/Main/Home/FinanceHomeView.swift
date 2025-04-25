@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-struct EnhancedFinanceHomeView: View {
+struct FinanceHomeView: View {
     // MARK: - Properties
     @StateObject private var authService = AuthenticationService.shared
     @EnvironmentObject var plaidManager: PlaidManager
@@ -23,6 +23,9 @@ struct EnhancedFinanceHomeView: View {
     @State private var cardOffset: CGFloat = 1000
     @State private var opacity: Double = 0
     @State private var scale: CGFloat = 0.8
+    
+    @State private var selectedAccount: PlaidAccount? = nil
+    @State private var showAccountDetails: Bool = false
     
     // Computed properties
     var totalBalance: Double {
@@ -85,11 +88,13 @@ struct EnhancedFinanceHomeView: View {
         .sheet(isPresented: $showProfileSheet) {
             profileSheetView
         }
-        .sheet(isPresented: $showTransactionDetail) {
-            if let transaction = selectedTransaction {
-                TransactionDetailViewFirestore(transaction: transaction)
-                    .environmentObject(plaidManager)
-            }
+        .sheet(item: $selectedTransaction) { transaction in
+            TransactionDetailViewFirestore(transaction: transaction)
+                .environmentObject(plaidManager)
+        }
+        .sheet(item: $selectedAccount) { account in
+            AccountDetailView(account: account)
+                .environmentObject(plaidManager)
         }
         .onAppear {
             // Fetch data when view appears if we haven't already
@@ -126,60 +131,36 @@ struct EnhancedFinanceHomeView: View {
                 }
             }) {
                 HStack(spacing: 8) {
-                    // User profile image
-                    if let photoURL = authService.user?.photoURL {
-                        AsyncImage(url: photoURL) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 40, height: 40)
-                                .clipShape(Circle())
-                        } placeholder: {
-                            Circle()
-                                .fill(AppTheme.accentPurple.opacity(0.3))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(AppTheme.textColor)
-                                )
-                        }
-                    } else {
-                        Circle()
-                            .fill(AppTheme.accentPurple.opacity(0.3))
-                            .frame(width: 40, height: 40)
-                            .overlay(
-                                Image(systemName: "person.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(AppTheme.textColor)
-                            )
-                    }
+                    // User profile image or icon (can keep existing code)
                     
-                    Text("Hi, \(userName.components(separatedBy: " ").first ?? userName)!")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundColor(AppTheme.textColor)
+                    VStack(alignment: .leading) {
+                        Text("Hi, \(userName.components(separatedBy: " ").first ?? userName)!")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(AppTheme.textColor)
+                    }
                 }
             }
             .buttonStyle(ScaleButtonStyle())
             
             Spacer()
-            
-            // Add Transaction button
-            Button(action: {
-                showNewTransaction = true
-            }) {
-                Text("Add")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 16)
-                    .background(AppTheme.primaryGreen)
-                    .cornerRadius(20)
-            }
-            .buttonStyle(ScaleButtonStyle())
         }
+    }
+    
+    private func calculateTotalDebt() -> Double {
+        // Implement your debt calculation logic
+        // This is a placeholder - replace with actual debt calculation
+        return plaidManager.transactions
+            .filter { $0.category.lowercased().contains("debt") }
+            .reduce(0) { $0 + abs($1.amount) }
+    }
+
+    private func calculateTotalInvestments() -> Double {
+        // Implement your investments calculation logic
+        // This is a placeholder - replace with actual investments calculation
+        return plaidManager.transactions
+            .filter { $0.category.lowercased().contains("investment") }
+            .reduce(0) { $0 + abs($1.amount) }
     }
     
     // Main scrollable content
@@ -218,110 +199,120 @@ struct EnhancedFinanceHomeView: View {
         }
     }
     
-    // Balance card with income and expenses
     private var balanceCardView: some View {
-        ZStack {
-            // Card background with dynamic shadow
-            RoundedRectangle(cornerRadius: 25)
-                .fill(AppTheme.accentBlue)
-                .shadow(color: AppTheme.accentBlue.opacity(0.3), radius: 15, x: 0, y: 8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 25)
-                        .strokeBorder(Color.black.opacity(0.05), lineWidth: 1)
-                )
-            
-            VStack(alignment: .leading, spacing: 16) {
-                // Total Balance section
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Total Balance")
-                            .font(.headline)
-                            .foregroundColor(AppTheme.backgroundColor.opacity(0.8))
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            // Toggle balance visibility with animation
-                            withAnimation(.spring()) {
-                                hideBalance.toggle()
-                            }
-                        }) {
-                            Image(systemName: hideBalance ? "eye" : "eye.slash")
-                                .foregroundColor(AppTheme.backgroundColor)
-                                .padding(8)
-                                .background(
-                                    Circle()
-                                        .fill(Color.black.opacity(0.05))
-                                )
-                        }
-                        .buttonStyle(ScaleButtonStyle())
+        VStack(alignment: .leading, spacing: 20) {
+            // ── Header with clearer label ───────────────────────────────────────────
+            HStack {
+                Text("Total Bank Balance")
+                    .font(.headline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.8))
+
+                Spacer()
+
+                Button {
+                    withAnimation(.spring()) {
+                        hideBalance.toggle()
                     }
-                    
-                    Group {
-                        if hideBalance {
-                            Text("$•••••••")
-                                .font(.system(size: 42, weight: .bold))
-                                .foregroundColor(AppTheme.backgroundColor)
-                                .transition(.opacity)
-                        } else {
-                            // Use CountingView for animation
-                            CountingView(
-                                value: animateBalance ? totalBalance : 0,
-                                format: "$%.2f",
-                                fontSize: 42,
-                                textColor: AppTheme.backgroundColor
-                            )
-                            .transition(.opacity)
-                        }
-                    }
+                } label: {
+                    Image(systemName: hideBalance ? "eye" : "eye.slash")
+                        .font(.subheadline)
+                        .foregroundColor(AppTheme.textColor)
+                        .padding(6)
+                        .background(
+                            Circle()
+                                .fill(AppTheme.cardBackground)
+                                .shadow(color: .black.opacity(0.06), radius: 2, x: 0, y: 1)
+                        )
                 }
-                
-                Divider()
-                    .background(AppTheme.backgroundColor.opacity(0.2))
-                
-                // Income and Expenses row
-                HStack {
-                    // Income
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Income")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.backgroundColor.opacity(0.8))
-                        
-                        if hideBalance {
-                            Text("$•••••")
-                                .font(.headline)
-                                .foregroundColor(AppTheme.backgroundColor)
-                        } else {
-                            Text("$\(String(format: "%.2f", totalIncome))")
-                                .font(.headline)
-                                .foregroundColor(AppTheme.backgroundColor)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Expenses
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("Expenses")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.backgroundColor.opacity(0.8))
-                        
-                        if hideBalance {
-                            Text("$•••••")
-                                .font(.headline)
-                                .foregroundColor(AppTheme.backgroundColor)
-                        } else {
-                            Text("$\(String(format: "%.2f", totalExpenses))")
-                                .font(.headline)
-                                .foregroundColor(AppTheme.backgroundColor)
-                        }
-                    }
+                .buttonStyle(PlainButtonStyle())
+            }
+
+            // ── Animated balance ─────────────────────────────────────────
+            Group {
+                if hideBalance {
+                    Text("$•••••••")
+                } else {
+                    CountingView(
+                        value: animateBalance ? totalBalance : 0,
+                        format: "$%.2f",
+                        fontSize: 40,
+                        textColor: AppTheme.textColor
+                    )
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
+            .font(.system(size: 40, weight: .bold))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider()
+                .background(AppTheme.cardStroke)
+
+            // ── Financial metrics row with monthly labels ────────────────────────────────
+            HStack(spacing: 12) {
+                // Monthly Income
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Monthly Income")
+                        .font(.caption)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    Text(hideBalance ? "$•••••"
+                         : "$\(totalIncome, specifier: "%.2f")")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.primaryGreen)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Monthly Expenses
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Monthly Expenses")
+                        .font(.caption)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    Text(hideBalance ? "$•••••"
+                         : "$\(totalExpenses, specifier: "%.2f")")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.expenseColor)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
+            // Second row for Debt & Investments
+            HStack(spacing: 12) {
+                // Debt
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Total Debt")
+                        .font(.caption)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    Text(hideBalance ? "$•••••"
+                         : "$\(calculateTotalDebt(), specifier: "%.2f")")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.expenseColor)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Investments
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Investments")
+                        .font(.caption)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    Text(hideBalance ? "$•••••"
+                         : "$\(calculateTotalInvestments(), specifier: "%.2f")")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.primaryGreen)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(AppTheme.cardBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(AppTheme.cardStroke, lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
+        )
+        .padding(.horizontal)
     }
+
     
     // Transactions section using currently displayed transactions
     private var transactionsSection: some View {
@@ -333,17 +324,12 @@ struct EnhancedFinanceHomeView: View {
                 
                 Spacer()
                 
-                Button(action: {
-                    withAnimation {
-                        showAllTransactions = true
-                    }
-                }) {
-                    Text("See All")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(AppTheme.textColor)
-                }
-                .buttonStyle(ScaleButtonStyle())
+                NavigationLink(destination: AllTransactionsView()) {
+                               Text("See All")
+                                   .font(.subheadline)
+                                   .fontWeight(.medium)
+                                   .foregroundColor(AppTheme.textColor)
+                           }
             }
             .padding(.horizontal)
             
@@ -352,8 +338,9 @@ struct EnhancedFinanceHomeView: View {
             } else {
                 ForEach(Array(currentMonthTransactions.prefix(5).enumerated()), id: \.element.id) { index, transaction in
                     Button(action: {
+                      
                         selectedTransaction = transaction
-                        showTransactionDetail = true
+                      //  showTransactionDetail = true
                     }) {
                         TransactionRow(transaction: transaction)
                             .padding(.horizontal)
@@ -506,7 +493,9 @@ struct EnhancedFinanceHomeView: View {
     // Account card view
     private func accountCard(for account: PlaidAccount) -> some View {
         Button(action: {
-            // Show account details
+            // Show account details sheet
+            selectedAccount = account
+            showAccountDetails = true
         }) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -601,7 +590,7 @@ struct CountingView: View {
 // MARK: - Preview
 struct FinanceHomeView_Previews: PreviewProvider {
     static var previews: some View {
-        EnhancedFinanceHomeView()
+       FinanceHomeView()
             .environmentObject(PlaidManager.shared)
             .preferredColorScheme(.dark)
     }
@@ -634,32 +623,43 @@ struct ProfileOptionRow: View {
     }
 }
 
-// Count animation for numbers
-//struct CountingView: View {
-//    let value: Double
-//    let format: String
-//    let fontSize: CGFloat
-//    let textColor: Color
-//    
-//    var body: some View {
-//        Text(String(format: format, value))
-//            .font(.system(size: fontSize, weight: .bold))
-//            .foregroundColor(textColor)
-//    }
-//}
-
-// Scale animation for buttons
-//struct ScaleButtonStyle: ButtonStyle {
-//    func makeBody(configuration: Configuration) -> some View {
-//        configuration.label
-//            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-//            .opacity(configuration.isPressed ? 0.9 : 1)
-//            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
-//    }
-//}
-// MARK: - Supporting Views
-
-
+struct AllTransactionsView: View {
+    @EnvironmentObject var plaidManager: PlaidManager
+    @State private var selectedTransaction: PlaidTransaction? = nil
+    
+    var body: some View {
+        ZStack {
+            AppTheme.backgroundGradient.ignoresSafeArea()
+            
+            VStack(spacing: 12) {
+                if plaidManager.transactions.isEmpty {
+                    Text("No transactions available")
+                        .foregroundColor(AppTheme.textColor)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(plaidManager.transactions) { transaction in
+                                Button(action: {
+                                    selectedTransaction = transaction
+                                }) {
+                                    TransactionRow(transaction: transaction)
+                                        .padding(.horizontal)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .padding(.vertical)
+                    }
+                }
+            }
+            .navigationTitle("All Transactions")
+            .sheet(item: $selectedTransaction) { transaction in
+                TransactionDetailViewFirestore(transaction: transaction)
+                    .environmentObject(plaidManager)
+            }
+        }
+    }
+}
 
 // Transaction row with dynamic icons based on category
 struct TransactionRow: View {
@@ -864,6 +864,227 @@ struct CategoryButton: View {
                     .fill(isSelected ? AppTheme.accentBlue : AppTheme.cardBackground)
             )
         }
+    }
+}
+
+struct AccountDetailView: View {
+    let account: PlaidAccount
+    @Environment(\.presentationMode) var presentationMode
+    @EnvironmentObject var plaidManager: PlaidManager
+    
+    // Get transactions for this specific account
+    var accountTransactions: [PlaidTransaction] {
+        return plaidManager.transactions.filter { $0.accountId == account.id }
+    }
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                AppTheme.backgroundGradient.ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Account header with logo and balance
+                        VStack(spacing: 16) {
+                            // Bank logo
+                            ZStack {
+                                Circle()
+                                    .fill(AppTheme.accentPurple.opacity(0.3))
+                                    .frame(width: 80, height: 80)
+                                
+                                if let logo = account.institutionLogo {
+                                    Image(uiImage: logo)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 50, height: 50)
+                                } else {
+                                    Image(systemName: "building.columns")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(AppTheme.accentBlue)
+                                }
+                            }
+                            
+                            // Account name
+                            Text(account.name)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(AppTheme.textColor)
+                            
+                            Text(account.institutionName)
+                                .font(.headline)
+                                .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            
+                            // Balance
+                            VStack(spacing: 4) {
+                                Text("Current Balance")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                                
+                                Text("$\(account.balance, specifier: "%.2f")")
+                                    .font(.system(size: 36, weight: .bold))
+                                    .foregroundColor(account.balance >= 0 ? AppTheme.primaryGreen : AppTheme.expenseColor)
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .padding()
+                        .background(AppTheme.cardBackground)
+                        .cornerRadius(20)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(AppTheme.cardStroke, lineWidth: 1)
+                        )
+                        .padding(.horizontal)
+                        
+                        // Account details
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Account Details")
+                                .font(.headline)
+                                .foregroundColor(AppTheme.textColor)
+                                .padding(.horizontal)
+                            
+                            VStack(spacing: 12) {
+                                detailRow(title: "Account Type", value: account.type)
+                                
+                                Divider().background(AppTheme.cardStroke)
+                                
+                                detailRow(title: "Account Number", value: "****\(account.id.suffix(4))")
+                                
+                                Divider().background(AppTheme.cardStroke)
+                                
+                                detailRow(title: "Institution", value: account.institutionName)
+                                
+                                if !accountTransactions.isEmpty {
+                                    Divider().background(AppTheme.cardStroke)
+                                    
+                                    detailRow(
+                                        title: "Last Transaction",
+                                        value: formatDate(accountTransactions.sorted(by: { $0.date > $1.date }).first!.date)
+                                    )
+                                }
+                            }
+                            .padding()
+                            .background(AppTheme.cardBackground)
+                            .cornerRadius(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(AppTheme.cardStroke, lineWidth: 1)
+                            )
+                            .padding(.horizontal)
+                        }
+                        
+                        // Recent transactions
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Recent Transactions")
+                                .font(.headline)
+                                .foregroundColor(AppTheme.textColor)
+                                .padding(.horizontal)
+                            
+                            if accountTransactions.isEmpty {
+                                Text("No transactions for this account")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .padding()
+                                    .background(AppTheme.cardBackground)
+                                    .cornerRadius(16)
+                                    .padding(.horizontal)
+                            } else {
+                                ForEach(accountTransactions.prefix(5)) { transaction in
+                                    TransactionRow(transaction: transaction)
+                                        .padding(.horizontal)
+                                }
+                                
+                                if accountTransactions.count > 5 {
+                                    Button(action: {
+                                        // Show all transactions for this account
+                                    }) {
+                                        Text("View All Transactions")
+                                            .font(.subheadline)
+                                            .foregroundColor(AppTheme.primaryGreen)
+                                            .padding()
+                                            .frame(maxWidth: .infinity)
+                                            .background(AppTheme.primaryGreen.opacity(0.1))
+                                            .cornerRadius(16)
+                                    }
+                                    .padding(.horizontal)
+                                    .buttonStyle(ScaleButtonStyle())
+                                }
+                            }
+                        }
+                        
+                        // Action buttons
+                        HStack(spacing: 16) {
+                            Button(action: {
+                                // Refresh account
+                            }) {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(AppTheme.cardBackground)
+                                    .cornerRadius(16)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(AppTheme.cardStroke, lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(ScaleButtonStyle())
+                            
+                            Button(action: {
+                                // Disconnect account
+                            }) {
+                                Label("Disconnect", systemImage: "link.badge.minus")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.expenseColor)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(AppTheme.cardBackground)
+                                    .cornerRadius(16)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(AppTheme.cardStroke, lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(ScaleButtonStyle())
+                        }
+                        .padding(.horizontal)
+                    }
+                    .padding(.vertical)
+                }
+            }
+            .navigationTitle("Account Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .foregroundColor(AppTheme.primaryGreen)
+                }
+            }
+        }
+    }
+    
+    private func detailRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(AppTheme.textColor.opacity(0.7))
+            
+            Spacer()
+            
+            Text(value)
+                .font(.subheadline)
+                .foregroundColor(AppTheme.textColor)
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 

@@ -10,35 +10,16 @@ import Firebase
 import FirebaseFirestore
 import FirebaseAuth
 
-// MARK: - TransactionDetailViewFirestore
-// Enhanced TransactionDetailView that supports Firestore features
-
 struct TransactionDetailViewFirestore: View {
     let transaction: PlaidTransaction
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject var plaidManager: PlaidManager
     
-    // Add these state variables for Firestore integration
+    // State variables for Firestore integration
     @State private var isLoading = true
-    @State private var showShareSheet = false
-    @State private var isAddingNote = false
-    @State private var noteText = ""
     @State private var transactionNotes = ""
-    @State private var transactionTags: [String] = []
-    @State private var newTag = ""
-    @State private var isAddingTag = false
-    @State private var isEditingCategory = false
     @State private var selectedCategory = ""
-    @State private var showingSimilarTransactions = false
     @State private var similarTransactions: [PlaidTransaction] = []
-    
-    // Categories for selection
-    private let categories = [
-        "Food & Dining", "Shopping", "Transportation", "Entertainment",
-        "Bills & Utilities", "Health & Medical", "Travel", "Education",
-        "Groceries", "Personal Care", "Home", "Gifts & Donations",
-        "Income", "Transfer", "Fees & Charges", "Other"
-    ]
     
     var body: some View {
         NavigationView {
@@ -60,15 +41,9 @@ struct TransactionDetailViewFirestore: View {
                 } else {
                     // Content
                     ScrollView {
-                        VStack(spacing: 25) {
+                        VStack(spacing: 20) {
                             // Transaction header
                             transactionHeader
-                            
-                            // Action buttons
-                            actionButtonsRow
-                            
-                            // Tags section (new)
-                            tagsSection
                             
                             // Details card
                             transactionDetails
@@ -79,7 +54,7 @@ struct TransactionDetailViewFirestore: View {
                             // Payment method section
                             paymentMethodSection
                             
-                            // Notes section
+                            // Notes section (simplified)
                             notesSection
                             
                             // Additional information
@@ -105,32 +80,6 @@ struct TransactionDetailViewFirestore: View {
                             .foregroundColor(AppTheme.primaryGreen)
                     }
                 }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button(action: {
-                            showShareSheet = true
-                        }) {
-                            Label("Share", systemImage: "square.and.arrow.up")
-                        }
-                        
-                        Button(action: {
-                            // Report functionality
-                        }) {
-                            Label("Report an Issue", systemImage: "exclamationmark.triangle")
-                        }
-                        
-                        Button(action: {
-                            // Hide transaction
-                            hideTransaction()
-                        }) {
-                            Label("Hide Transaction", systemImage: "eye.slash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .foregroundColor(AppTheme.primaryGreen)
-                    }
-                }
             }
             .onAppear {
                 // Fetch transaction details from Firestore
@@ -138,18 +87,6 @@ struct TransactionDetailViewFirestore: View {
                 // Find similar transactions
                 findSimilarTransactions()
             }
-        }
-        .sheet(isPresented: $showShareSheet) {
-            // Share sheet would go here
-            shareTransactionSheet
-        }
-        .sheet(isPresented: $showingSimilarTransactions) {
-            // Similar transactions view
-            SimilarTransactionsView(transactions: similarTransactions)
-        }
-        .sheet(isPresented: $isEditingCategory) {
-            // Category selection sheet
-            categorySelectionSheet
         }
     }
     
@@ -172,10 +109,6 @@ struct TransactionDetailViewFirestore: View {
                     self.transactionNotes = notes
                 }
                 
-                if let tags = document.data()?["tags"] as? [String] {
-                    self.transactionTags = tags
-                }
-                
                 if let category = document.data()?["category"] as? String {
                     self.selectedCategory = category
                 } else {
@@ -190,143 +123,125 @@ struct TransactionDetailViewFirestore: View {
         }
     }
     
-    /// Save transaction notes to Firestore
-    private func saveTransactionNotes() {
-        guard !noteText.isEmpty else { return }
-        
-        PlaidFirestoreSync.shared.updateTransactionDetails(
-            transaction: transaction,
-            notes: noteText,
-            tags: nil,
-            isHidden: nil
-        ) { success in
-            if success {
-                // Update local state
-                transactionNotes = noteText
-                noteText = ""
-                isAddingNote = false
-            }
-        }
-    }
-    
-    /// Add a tag to the transaction
-    private func addTransactionTag() {
-        guard !newTag.isEmpty else { return }
-        
-        // Prevent duplicate tags
-        if !transactionTags.contains(newTag) {
-            var updatedTags = transactionTags
-            updatedTags.append(newTag)
-            
-            PlaidFirestoreSync.shared.updateTransactionDetails(
-                transaction: transaction,
-                notes: nil,
-                tags: updatedTags,
-                isHidden: nil
-            ) { success in
-                if success {
-                    // Update local state
-                    transactionTags = updatedTags
-                    newTag = ""
-                    isAddingTag = false
-                }
-            }
-        } else {
-            // Tag already exists
-            newTag = ""
-            isAddingTag = false
-        }
-    }
-    
-    /// Remove a tag from the transaction
-    private func removeTag(_ tag: String) {
-        var updatedTags = transactionTags
-        updatedTags.removeAll { $0 == tag }
-        
-        PlaidFirestoreSync.shared.updateTransactionDetails(
-            transaction: transaction,
-            notes: nil,
-            tags: updatedTags,
-            isHidden: nil
-        ) { success in
-            if success {
-                // Update local state
-                transactionTags = updatedTags
-            }
-        }
-    }
-    
-    /// Update transaction category
-    private func updateTransactionCategory() {
-        PlaidFirestoreSync.shared.updateTransactionCategory(
-            transaction: transaction,
-            newCategory: selectedCategory
-        ) { success in
-            if success {
-                // Category updated successfully
-            }
-        }
-    }
-    
-    /// Hide this transaction
-    private func hideTransaction() {
-        PlaidFirestoreSync.shared.updateTransactionDetails(
-            transaction: transaction,
-            notes: nil,
-            tags: nil,
-            isHidden: true
-        ) { success in
-            if success {
-                // Dismiss the view
-                presentationMode.wrappedValue.dismiss()
-            }
-        }
-    }
-    
     /// Find similar transactions
     private func findSimilarTransactions() {
+        // First try to find from Firestore
+        findSimilarTransactionsFromFirestore()
+        
+        // Also find from local transactions as a fallback
+        findSimilarTransactionsLocally()
+    }
+    
+    /// Find similar transactions from Firestore
+    private func findSimilarTransactionsFromFirestore() {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         
         let db = Firestore.firestore()
         
         // Query for transactions with the same merchant name or category
-        db.collection("users/\(userId)/transactions")
+        let merchantQuery = db.collection("users/\(userId)/transactions")
             .whereField("merchantName", isEqualTo: transaction.merchantName)
-            .whereField("id", isNotEqualTo: transaction.id) // Exclude current transaction
+            .whereField("id", isNotEqualTo: transaction.id)
             .limit(to: 5)
-            .getDocuments { (snapshot, error) in
+        
+        merchantQuery.getDocuments { (snapshot, error) in
+            if let error = error {
+                print("Error finding similar transactions: \(error.localizedDescription)")
+                return
+            }
+            
+            if let documents = snapshot?.documents, !documents.isEmpty {
+                let transactions = self.parseFirestoreTransactions(documents)
+                
+                // If we found transactions with the same merchant name, use those
+                if !transactions.isEmpty {
+                    DispatchQueue.main.async {
+                        self.similarTransactions = transactions
+                    }
+                    return
+                }
+            }
+            
+            // If no merchant matches, try to find by category
+            let categoryQuery = db.collection("users/\(userId)/transactions")
+                .whereField("category", isEqualTo: self.transaction.category)
+                .whereField("id", isNotEqualTo: self.transaction.id)
+                .limit(to: 5)
+            
+            categoryQuery.getDocuments { (snapshot, error) in
                 if let error = error {
-                    print("Error finding similar transactions: \(error.localizedDescription)")
+                    print("Error finding category transactions: \(error.localizedDescription)")
                     return
                 }
                 
                 if let documents = snapshot?.documents {
-                    self.similarTransactions = documents.compactMap { document -> PlaidTransaction? in
-                        guard
-                            let name = document.data()["name"] as? String,
-                            let amount = document.data()["amount"] as? Double,
-                            let dateTimestamp = document.data()["date"] as? Timestamp,
-                            let category = document.data()["category"] as? String,
-                            let merchantName = document.data()["merchantName"] as? String,
-                            let accountId = document.data()["accountId"] as? String,
-                            let pending = document.data()["pending"] as? Bool
-                        else {
-                            return nil
-                        }
-                        
-                        return PlaidTransaction(
-                            id: document.documentID,
-                            name: name,
-                            amount: amount,
-                            date: dateTimestamp.dateValue(),
-                            category: category,
-                            merchantName: merchantName,
-                            accountId: accountId,
-                            pending: pending
-                        )
+                    let transactions = self.parseFirestoreTransactions(documents)
+                    
+                    DispatchQueue.main.async {
+                        self.similarTransactions = transactions
                     }
                 }
             }
+        }
+    }
+    
+    /// Parse Firestore documents into PlaidTransaction objects
+    private func parseFirestoreTransactions(_ documents: [QueryDocumentSnapshot]) -> [PlaidTransaction] {
+        return documents.compactMap { document -> PlaidTransaction? in
+            guard
+                let name = document.data()["name"] as? String,
+                let amount = document.data()["amount"] as? Double,
+                let dateTimestamp = document.data()["date"] as? Timestamp,
+                let category = document.data()["category"] as? String,
+                let merchantName = document.data()["merchantName"] as? String,
+                let accountId = document.data()["accountId"] as? String,
+                let pending = document.data()["pending"] as? Bool
+            else {
+                return nil
+            }
+            
+            return PlaidTransaction(
+                id: document.documentID,
+                name: name,
+                amount: amount,
+                date: dateTimestamp.dateValue(),
+                category: category,
+                merchantName: merchantName,
+                accountId: accountId,
+                pending: pending
+            )
+        }
+    }
+    
+    /// Find similar transactions locally as fallback
+    private func findSimilarTransactionsLocally() {
+        // If we already found transactions from Firestore, don't override
+        if !similarTransactions.isEmpty {
+            return
+        }
+        
+        // First try to find transactions with the same merchant name
+        let merchantMatches = plaidManager.transactions.filter {
+            $0.id != transaction.id &&
+            $0.merchantName.lowercased() == transaction.merchantName.lowercased()
+        }
+        
+        if !merchantMatches.isEmpty {
+            DispatchQueue.main.async {
+                self.similarTransactions = Array(merchantMatches.prefix(5))
+            }
+            return
+        }
+        
+        // If no merchant matches, try to find by category
+        let categoryMatches = plaidManager.transactions.filter {
+            $0.id != transaction.id &&
+            $0.category.lowercased() == transaction.category.lowercased()
+        }
+        
+        DispatchQueue.main.async {
+            self.similarTransactions = Array(categoryMatches.prefix(5))
+        }
     }
     
     // MARK: - UI Components
@@ -409,99 +324,6 @@ struct TransactionDetailViewFirestore: View {
         }
     }
     
-    // Action buttons row
-    private var actionButtonsRow: some View {
-        HStack(spacing: 20) {
-            Spacer()
-            
-            // Split button
-            actionButton(icon: "arrow.triangle.branch", title: "Split") {
-                // Split action
-            }
-            
-            // Categorize button
-            actionButton(icon: "tag", title: "Categorize") {
-                isEditingCategory = true
-            }
-            
-            // Add note button
-            actionButton(icon: "square.and.pencil", title: "Add Note") {
-                isAddingNote = true
-            }
-            
-            Spacer()
-        }
-    }
-    
-    // Tags section
-    private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Tags")
-                .font(.headline)
-                .foregroundColor(AppTheme.textColor)
-            
-            VStack(alignment: .leading, spacing: 15) {
-                // Show existing tags
-                if !transactionTags.isEmpty {
-                    // Wrap tags in a flow layout
-                    FlowLayout(spacing: 8) {
-                        ForEach(transactionTags, id: \.self) { tag in
-                            tagView(tag: tag)
-                        }
-                    }
-                }
-                
-                // Add tag button or tag editor
-                if isAddingTag {
-                    HStack {
-                        TextField("New tag", text: $newTag)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(AppTheme.cardBackground)
-                            .cornerRadius(8)
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Button(action: addTransactionTag) {
-                            Text("Add")
-                                .foregroundColor(AppTheme.primaryGreen)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                        }
-                        
-                        Button(action: { isAddingTag = false }) {
-                            Text("Cancel")
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                        }
-                    }
-                } else {
-                    Button(action: { isAddingTag = true }) {
-                        HStack {
-                            Image(systemName: "plus")
-                                .font(.system(size: 14))
-                            
-                            Text("Add Tag")
-                                .font(.subheadline)
-                        }
-                        .foregroundColor(AppTheme.primaryGreen)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(AppTheme.primaryGreen.opacity(0.2))
-                        .cornerRadius(20)
-                    }
-                }
-            }
-            .padding()
-            .background(AppTheme.cardBackground)
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(AppTheme.cardStroke, lineWidth: 1)
-            )
-        }
-    }
-    
     // Transaction details card
     private var transactionDetails: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -567,25 +389,13 @@ struct TransactionDetailViewFirestore: View {
                         .font(.body)
                         .foregroundColor(AppTheme.textColor)
                     
-                    // Added budget information
+                    // Monthly budget percentage
                     Text("15% of monthly budget")
                         .font(.caption)
                         .foregroundColor(AppTheme.textColor.opacity(0.6))
                 }
                 
                 Spacer()
-                
-                Button(action: {
-                    isEditingCategory = true
-                }) {
-                    Text("Change")
-                        .font(.subheadline)
-                        .foregroundColor(AppTheme.primaryGreen)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(AppTheme.primaryGreen.opacity(0.2))
-                        .cornerRadius(12)
-                }
             }
             .padding()
             .background(AppTheme.cardBackground)
@@ -637,63 +447,20 @@ struct TransactionDetailViewFirestore: View {
         }
     }
     
-    // Notes section
+    // Simplified notes section
     private var notesSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Notes")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
-            if isAddingNote {
-                // Note editor
-                VStack(spacing: 10) {
-                    TextEditor(text: $noteText)
-                        .padding()
-                        .frame(minHeight: 100)
-                        .background(AppTheme.cardBackground)
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(AppTheme.cardStroke, lineWidth: 1)
-                        )
-                        .foregroundColor(AppTheme.textColor)
-                    
-                    HStack {
-                        Button(action: { isAddingNote = false }) {
-                            Text("Cancel")
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                        }
-                        
-                        Spacer()
-                        
-                        Button(action: saveTransactionNotes) {
-                            Text("Save")
-                                .foregroundColor(AppTheme.primaryGreen)
-                                .fontWeight(.semibold)
-                        }
-                    }
-                }
-            } else if !transactionNotes.isEmpty {
+            if !transactionNotes.isEmpty {
                 // Show existing note
                 VStack(alignment: .leading) {
                     Text(transactionNotes)
                         .foregroundColor(AppTheme.textColor)
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    HStack {
-                        Spacer()
-                        
-                        Button(action: {
-                            noteText = transactionNotes
-                            isAddingNote = true
-                        }) {
-                            Text("Edit")
-                                .font(.caption)
-                                .foregroundColor(AppTheme.primaryGreen)
-                        }
-                        .padding(8)
-                    }
                 }
                 .background(AppTheme.cardBackground)
                 .cornerRadius(16)
@@ -703,28 +470,17 @@ struct TransactionDetailViewFirestore: View {
                 )
             } else {
                 // Empty note state
-                Button(action: {
-                    isAddingNote = true
-                }) {
-                    HStack {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 20))
-                            .foregroundColor(AppTheme.primaryGreen)
-                        
-                        Text("Add a note")
-                            .font(.body)
-                            .foregroundColor(AppTheme.primaryGreen)
-                        
-                        Spacer()
-                    }
+                Text("No notes for this transaction")
+                    .font(.subheadline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.6))
                     .padding()
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .background(AppTheme.cardBackground)
                     .cornerRadius(16)
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
                             .stroke(AppTheme.cardStroke, lineWidth: 1)
                     )
-                }
             }
         }
     }
@@ -773,21 +529,6 @@ struct TransactionDetailViewFirestore: View {
                         .font(.subheadline)
                         .foregroundColor(AppTheme.textColor)
                 }
-                
-                // Add dispute button
-                Button(action: {
-                    // Dispute action would go here
-                }) {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundColor(AppTheme.expenseColor)
-                        
-                        Text("Report an issue with this transaction")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.expenseColor)
-                    }
-                    .padding(.top, 10)
-                }
             }
             .padding()
             .background(AppTheme.cardBackground)
@@ -799,7 +540,7 @@ struct TransactionDetailViewFirestore: View {
         }
     }
     
-    // Similar transactions section
+    // Similar transactions section - enhanced to show by category or merchant
     private var similarTransactionsSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Similar Transactions")
@@ -809,40 +550,19 @@ struct TransactionDetailViewFirestore: View {
             VStack(spacing: 12) {
                 if similarTransactions.isEmpty {
                     // Empty state
-                    HStack {
-                        Spacer()
-                        
-                        Text("No similar transactions found")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            .padding()
-                        
-                        Spacer()
-                    }
+                    Text("No similar transactions found")
+                        .font(.subheadline)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                        .padding()
+                        .frame(maxWidth: .infinity)
                 } else {
-                    // Show up to 2 similar transactions
-                    ForEach(similarTransactions.prefix(2), id: \.id) { transaction in
-                        similarTransactionRow(
-                            merchantName: transaction.merchantName,
-                            amount: transaction.amount,
-                            date: transaction.date
-                        )
+                    // Show similar transactions
+                    ForEach(similarTransactions) { tx in
+                        similarTransactionRow(transaction: tx)
                         
-                        if transaction.id != similarTransactions.prefix(2).last?.id {
+                        if tx.id != similarTransactions.last?.id {
                             Divider()
                                 .background(AppTheme.textColor.opacity(0.1))
-                        }
-                    }
-                    
-                    // Show button to view all if there are more than 2
-                    if similarTransactions.count > 2 {
-                        Button(action: {
-                            showingSimilarTransactions = true
-                        }) {
-                            Text("View All Similar Transactions")
-                                .font(.subheadline)
-                                .foregroundColor(AppTheme.accentBlue)
-                                .padding(.top, 5)
                         }
                     }
                 }
@@ -857,177 +577,7 @@ struct TransactionDetailViewFirestore: View {
         }
     }
     
-    // Share Transaction Sheet
-    private var shareTransactionSheet: some View {
-        VStack(spacing: 25) {
-            // Header
-            Text("Share Transaction")
-                .font(.title2)
-                .fontWeight(.bold)
-                .padding(.top)
-            
-            // Transaction summary
-            VStack(spacing: 15) {
-                HStack {
-                    Text(transaction.merchantName)
-                        .font(.headline)
-                    
-                    Spacer()
-                    
-                    Text(transaction.amount >= 0 ?
-                        "+$\(String(format: "%.2f", transaction.amount))" :
-                        "-$\(String(format: "%.2f", abs(transaction.amount)))")
-                        .font(.headline)
-                        .foregroundColor(transaction.amount >= 0 ?
-                                       AppTheme.primaryGreen :
-                                       AppTheme.expenseColor)
-                }
-                
-                HStack {
-                    Text(formatDate(transaction.date))
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
-                    Spacer()
-                    
-                    Text(selectedCategory)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
-            }
-            .padding()
-            .background(Color.gray.opacity(0.1))
-            .cornerRadius(12)
-            
-            // Share options
-            Text("Share via")
-                .font(.headline)
-                .padding(.top)
-            
-            HStack(spacing: 30) {
-                shareOption(title: "Message", icon: "message.fill", color: .blue)
-                shareOption(title: "Mail", icon: "envelope.fill", color: .red)
-                shareOption(title: "Notes", icon: "note.text", color: .yellow)
-                shareOption(title: "Copy", icon: "doc.on.doc", color: .gray)
-            }
-            .padding(.bottom)
-            
-            // Include details checkbox
-            Toggle("Include transaction details", isOn: .constant(true))
-                .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-            
-            // Cancel button
-            Button("Cancel") {
-                showShareSheet = false
-            }
-            .foregroundColor(.red)
-            .padding(.vertical)
-            .padding(.bottom, 20)
-        }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(16)
-        .presentationDetents([.medium])
-    }
-    
-    // Helper for share options
-    private func shareOption(title: String, icon: String, color: Color) -> some View {
-        Button(action: {
-            // Share action
-            showShareSheet = false
-        }) {
-            VStack {
-                ZStack {
-                    Circle()
-                        .fill(color.opacity(0.2))
-                        .frame(width: 60, height: 60)
-                    
-                    Image(systemName: icon)
-                        .font(.system(size: 28))
-                        .foregroundColor(color)
-                }
-                
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.primary)
-            }
-        }
-    }
-    
-    // Category selection sheet
-    private var categorySelectionSheet: some View {
-        NavigationView {
-            ZStack {
-                AppTheme.backgroundGradient
-                    .edgesIgnoringSafeArea(.all)
-                
-                List {
-                    ForEach(categories, id: \.self) { category in
-                        Button(action: {
-                            selectedCategory = category
-                            isEditingCategory = false
-                            updateTransactionCategory()
-                        }) {
-                            HStack {
-                                Image(systemName: getCategoryIcon(for: category))
-                                    .foregroundColor(categoryColor(for: category))
-                                    .frame(width: 30)
-                                
-                                Text(category)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Spacer()
-                                
-                                if category == selectedCategory {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(AppTheme.primaryGreen)
-                                }
-                            }
-                            .padding(.vertical, 8)
-                        }
-                    }
-                }
-                .listStyle(InsetGroupedListStyle())
-            }
-            .navigationTitle("Select Category")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Cancel") {
-                        isEditingCategory = false
-                    }
-                    .foregroundColor(AppTheme.primaryGreen)
-                }
-            }
-        }
-    }
-    
     // MARK: - Helper Views
-    
-    // Action button helper
-    private func actionButton(icon: String, title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 22))
-                    .foregroundColor(AppTheme.primaryGreen)
-                
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(AppTheme.textColor)
-            }
-            .frame(width: 75)
-            .padding(.vertical, 12)
-            .background(AppTheme.cardBackground)
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(AppTheme.cardStroke, lineWidth: 1)
-            )
-        }
-    }
     
     // Helper view for detail rows
     private func detailRow(title: String, value: String, icon: String) -> some View {
@@ -1050,52 +600,38 @@ struct TransactionDetailViewFirestore: View {
         }
     }
     
-    // Tag view for a single tag
-    private func tagView(tag: String) -> some View {
-        HStack(spacing: 4) {
-            Text(tag)
-                .font(.caption)
-                .foregroundColor(AppTheme.textColor)
-                .padding(.leading, 8)
-                .padding(.vertical, 4)
-            
-            Button(action: {
-                removeTag(tag)
-            }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8))
-                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    .padding(4)
-            }
-        }
-        .background(AppTheme.cardBackground.opacity(0.5))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppTheme.cardStroke, lineWidth: 1)
-        )
-        .cornerRadius(12)
-    }
-    
-    // Similar transaction row helper
-    private func similarTransactionRow(merchantName: String, amount: Double, date: Date) -> some View {
+    // Similar transaction row
+    private func similarTransactionRow(transaction: PlaidTransaction) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(merchantName)
+                Text(transaction.merchantName)
                     .font(.body)
                     .foregroundColor(AppTheme.textColor)
                 
-                Text(formatDate(date, shortFormat: true))
-                    .font(.caption)
-                    .foregroundColor(AppTheme.textColor.opacity(0.6))
+                HStack {
+                    Text(formatDate(transaction.date, shortFormat: true))
+                        .font(.caption)
+                        .foregroundColor(AppTheme.textColor.opacity(0.6))
+                    
+                    Spacer()
+                    
+                    Text(transaction.category)
+                        .font(.caption)
+                        .foregroundColor(categoryColor(for: transaction.category))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(categoryColor(for: transaction.category).opacity(0.2))
+                        .cornerRadius(4)
+                }
             }
             
             Spacer()
             
-            Text(amount >= 0 ?
-                "+$\(String(format: "%.2f", amount))" :
-                "-$\(String(format: "%.2f", abs(amount)))")
+            Text(transaction.amount >= 0 ?
+                "+$\(String(format: "%.2f", transaction.amount))" :
+                "-$\(String(format: "%.2f", abs(transaction.amount)))")
                 .font(.body)
-                .foregroundColor(amount >= 0 ?
+                .foregroundColor(transaction.amount >= 0 ?
                                 AppTheme.primaryGreen :
                                 AppTheme.expenseColor)
         }
@@ -1103,7 +639,6 @@ struct TransactionDetailViewFirestore: View {
     
     // MARK: - Helper Methods
     
-    // Helper functions
     private func formatDate(_ date: Date, includeTime: Bool = false, includeWeekday: Bool = false, shortFormat: Bool = false) -> String {
         let formatter = DateFormatter()
         
@@ -1133,7 +668,6 @@ struct TransactionDetailViewFirestore: View {
     }
     
     private func formatTransactionId(_ id: String) -> String {
-        // Return last 8 characters or just use the full ID if it's short
         if id.count > 8 {
             return "..." + String(id.suffix(8))
         }
@@ -1173,7 +707,6 @@ struct TransactionDetailViewFirestore: View {
         }
     }
     
-    // Helper function to get color for category
     private func categoryColor(for category: String) -> Color {
         let lowercaseCategory = category.lowercased()
         
@@ -1200,7 +733,6 @@ struct TransactionDetailViewFirestore: View {
         }
     }
 }
-
 // MARK: - Similar Transactions View
 
 struct SimilarTransactionsView: View {

@@ -55,7 +55,7 @@ class FirestoreManager: ObservableObject {
         let batch = db.batch()
         
         for account in accounts {
-            let accountRef = db.collection("users/\(userId)/accounts").document(account.id)
+            let accountRef = db.collection("users").document(userId).collection("accounts").document(account.id)
             
             batch.setData([
                 "name": account.name,
@@ -134,7 +134,7 @@ class FirestoreManager: ObservableObject {
         let batch = db.batch()
         
         for transaction in transactions {
-            let transactionRef = db.collection("users/\(userId)/transactions").document(transaction.id)
+            let transactionRef = db.collection("users").document(userId).collection("transactions").document(transaction.id)
             
             // Convert Date to Timestamp
             let timestamp = Timestamp(date: transaction.date)
@@ -174,7 +174,7 @@ class FirestoreManager: ObservableObject {
         
         // Create a document ID if needed
         let categoryId = category.id
-        let categoryRef = db.collection("users/\(userId)/budget/categories").document(categoryId)
+        let categoryRef = db.collection("users").document(userId).collection("budgetCategories").document(categoryId)
         
         // Convert Color to hex string
         let colorHex = category.color.hexString
@@ -260,7 +260,7 @@ class FirestoreManager: ObservableObject {
             return
         }
         
-        let categoryRef = db.collection("users/\(userId)/budget/categories").document(categoryId)
+        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
         
         categoryRef.delete { [weak self] error in
             if let error = error {
@@ -434,7 +434,7 @@ class FirestoreManager: ObservableObject {
                     }
                     
                     // Save to Firestore
-                    let monthlyBudgetRef = self.db.collection("users/\(userId)/budget/monthlyBudgets").document(currentYearMonth)
+                    let monthlyBudgetRef = self.db.collection("users").document(userId).collection("budget").document(currentYearMonth)
                     
                     let data: [String: Any] = [
                         "totalBudget": totalBudget,
@@ -521,9 +521,20 @@ class FirestoreManager: ObservableObject {
             let previousYearMonth = dateFormatter.string(from: previousMonth)
             
             // Query previous month summary
-            let previousSummaryRef = db.collection("users/\(userId)/insights/monthlySummaries").document(previousYearMonth)
+            let monthlyBudgetsRef = db
+                .collection("users")
+                .document(userId)
+                .collection("budget")
+                .document(previousYearMonth)
+      
+
+            let previousSummaryRef = db
+                .collection("users")
+                .document(userId)
+                .collection("monthlySummaries")
+                
             
-            previousSummaryRef.getDocument { [weak self] document, error in
+            previousSummaryRef.document(previousYearMonth).getDocument { [weak self] document, error in
                 guard let self = self else {
                     group.leave()
                     return
@@ -538,7 +549,7 @@ class FirestoreManager: ObservableObject {
                 }
                 
                 // Save current month summary
-                let summaryRef = self.db.collection("users/\(userId)/insights/monthlySummaries").document(yearMonth)
+                let summaryRef = previousSummaryRef.document(yearMonth)
                 
                 let data: [String: Any] = [
                     "income": income,
