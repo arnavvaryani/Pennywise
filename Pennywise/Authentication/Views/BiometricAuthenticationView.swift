@@ -116,10 +116,11 @@ struct BiometricAuthenticationView: View {
                     
                     // Hidden NavigationLink that gets activated when authentication succeeds
                     NavigationLink(
-                        destination: FinanceRootView(),
-                        isActive: $navigateToFinanceRoot,
-                        label: { EmptyView() }
-                    )
+                                            destination: FinanceRootView()
+                                                .navigationBarBackButtonHidden(true),
+                                            isActive: $navigateToFinanceRoot,
+                                            label: { EmptyView() }
+                                        )
                 }
                 .padding()
                 

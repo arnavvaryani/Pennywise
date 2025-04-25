@@ -1,11 +1,3 @@
-//
-//  CategoryDetailView.swift
-//  Pennywise
-//
-//  Created by Arnav Varyani on 4/24/25.
-//
-
-
 import SwiftUI
 import Firebase
 import FirebaseFirestore
@@ -118,7 +110,6 @@ struct CategoryDetailView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         let updatedCategory = BudgetCategory(
-            
                             name: updatedName,
                             amount: updatedAmount,
                             icon: updatedIcon,
@@ -136,7 +127,7 @@ struct CategoryDetailView: View {
                 loadCategoryData()
             }
             .alert(item: Binding<AlertData?>(
-                get: { 
+                get: {
                     errorMessage.map { AlertData(id: UUID().uuidString, message: $0) }
                 },
                 set: { newValue in
@@ -185,7 +176,6 @@ struct CategoryDetailView: View {
                     .foregroundColor(updatedColor)
             }
             
-            // Category stats
             HStack(spacing: 30) {
                 // Budget amount
                 VStack(spacing: 4) {
@@ -437,8 +427,8 @@ struct CategoryDetailView: View {
                             Text("$\(String(format: "%.2f", transaction.amount))")
                                 .font(.subheadline)
                                 .foregroundColor(transaction.amount > 0 ?
-                                              AppTheme.expenseColor :
-                                              AppTheme.primaryGreen)
+                                                AppTheme.expenseColor :
+                                                AppTheme.primaryGreen)
                         }
                         .padding()
                         .background(AppTheme.cardBackground)
@@ -465,44 +455,11 @@ struct CategoryDetailView: View {
         .cornerRadius(16)
     }
     
-    // MARK: - Helper Variables
+    // MARK: - Data Methods
     
-    // Common icons for categories
-    private var commonIcons: [String] {
-        [
-            "house.fill", "cart.fill", "car.fill", "fork.knife",
-            "medical.thermometer", "wifi", "tv.fill", "gamecontroller.fill",
-            "airplane", "gift.fill", "dollarsign.circle.fill", "creditcard.fill",
-            "book.fill", "graduationcap.fill", "bag.fill", "tray.full.fill"
-        ]
-    }
-    
-    // Theme colors for categories
-    private var themeColors: [Color] {
-        [
-            AppTheme.primaryGreen, AppTheme.accentBlue, AppTheme.accentPurple,
-            Color(hex: "#FF5757"), Color(hex: "#FFD700"), Color(hex: "#50C878"),
-            Color(hex: "#FF8C00"), Color(hex: "#9370DB"), Color(hex: "#DA70D6"),
-            Color(hex: "#20B2AA"), Color(hex: "#32CD32"), Color(hex: "#FA8072")
-        ]
-    }
-    
-    // MARK: - Helper Methods
-    
-    // Static method to determine if a category is essential
-    static func isEssentialCategory(_ name: String) -> Bool {
-        let essentialCategories = ["Groceries", "Rent", "Utilities", "Transportation", 
-                                  "Healthcare", "Insurance", "Housing", "Medical", 
-                                  "Bills", "Mortgage"]
-        
-        return essentialCategories.contains { essential in
-            name.lowercased().contains(essential.lowercased())
-        }
-    }
-    
-    // Load category data
+    // Load category data and transactions
     private func loadCategoryData() {
-        // Load transactions for this category
+        // Get transactions from Plaid transactions that match this category name
         loadCategoryTransactions()
         
         isLoading = false
@@ -510,18 +467,25 @@ struct CategoryDetailView: View {
     
     // Load transactions for this category
     private func loadCategoryTransactions() {
-        // Get current month and year
         let calendar = Calendar.current
-        let currentMonth = calendar.component(.month, from: Date())
-        let currentYear = calendar.component(.year, from: Date())
+        let now = Date()
+        let currentMonth = calendar.component(.month, from: now)
+        let currentYear = calendar.component(.year, from: now)
         
-        // Filter transactions for the current month that match this category
+        // Filter the Plaid transactions by category name (matching this budget category)
+        // and by current month/year
         transactions = plaidManager.transactions.filter { transaction in
             let transactionMonth = calendar.component(.month, from: transaction.date)
             let transactionYear = calendar.component(.year, from: transaction.date)
+            
+            // Match based on predefined categories
+            let categorySystem = BudgetCategorySystem.shared
+            let matchedCategory = categorySystem.mapPlaidCategoryToPredefined(plaidCategory: transaction.category)
+            
             return transactionMonth == currentMonth &&
                    transactionYear == currentYear &&
-                   transaction.category.lowercased() == category.name.lowercased()
+                   transaction.amount > 0 &&
+                   (matchedCategory.name == category.name || transaction.category == category.name)
         }
         
         // Calculate total spent
@@ -530,23 +494,7 @@ struct CategoryDetailView: View {
     
     // Delete this category
     private func deleteCategory() {
-        guard let userId = Auth.auth().currentUser?.uid else {
-            errorMessage = "User not logged in"
-            return
-        }
-        
-        let db = Firestore.firestore()
-        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
-        
-        categoryRef.delete { error in
-            if let error = error {
-                errorMessage = "Error deleting category: \(error.localizedDescription)"
-                return
-            }
-            
-            // Success - dismiss the view
-            presentationMode.wrappedValue.dismiss()
-        }
+        presentationMode.wrappedValue.dismiss()
     }
     
     // Generate insights for this category
@@ -585,48 +533,12 @@ struct CategoryDetailView: View {
                     insights.append("Consider diversifying your \(category.name) spending to get better value.")
                 }
             }
-            
-            // Frequency analysis
-            if transactions.count > 3 {
-                let frequency = Double(transactions.count) / 30.0 * 7.0 // Weekly frequency
-                
-                if frequency > 3 {
-                    insights.append("You make \(String(format: "%.1f", frequency)) \(category.name) transactions per week. Consider batching purchases to reduce impulse spending.")
-                }
-            }
-            
-            // Add category-specific tips
-            switch category.name.lowercased() {
-            case let name where name.contains("food") || name.contains("dining"):
-                insights.append("- Try meal planning and preparation to save on food costs")
-                insights.append("- Consider using grocery rewards programs")
-                
-            case let name where name.contains("shopping") || name.contains("retail"):
-                insights.append("- Create a shopping list and stick to it")
-                insights.append("- Try waiting 24-48 hours before making non-essential purchases")
-                
-            case let name where name.contains("entertainment"):
-                insights.append("- Look for free or low-cost entertainment options")
-                insights.append("- Consider sharing subscription services with family or friends")
-                
-            case let name where name.contains("travel") || name.contains("transportation"):
-                insights.append("- Use public transportation when possible")
-                insights.append("- Combine errands to save on transportation costs")
-                
-            case let name where name.contains("utilities"):
-                insights.append("- Look into energy-efficient options to lower bills")
-                insights.append("- Compare service providers for better rates")
-                
-            default:
-                break
-            }
         }
-        
-        // Historical comparison (would need more data in a real app)
-        insights.append("Keep tracking your \(category.name) expenses to see how they change over time and identify potential savings.")
         
         categoryInsights = insights
     }
+    
+    // MARK: - Helper Methods
     
     // Format date for display
     private func formatDate(_ date: Date) -> String {
@@ -635,258 +547,38 @@ struct CategoryDetailView: View {
         formatter.timeStyle = .none
         return formatter.string(from: date)
     }
-}
-
-// MARK: - Category Insights View
-
-struct CategoryInsightsView: View {
-    let category: BudgetCategory
-    let insights: [String]
-    let spent: Double
-    let transactions: [PlaidTransaction]
-    @Binding var presentationMode: Bool
     
-    var body: some View {
-        NavigationView {
-            ZStack {
-                AppTheme.backgroundGradient
-                    .ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    // Header
-                    HStack(spacing: 15) {
-                        ZStack {
-                            Circle()
-                                .fill(category.color.opacity(0.2))
-                                .frame(width: 50, height: 50)
-                            
-                            Image(systemName: category.icon)
-                                .font(.system(size: 24))
-                                .foregroundColor(category.color)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(category.name)
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(AppTheme.textColor)
-                            
-                            Text("$\(Int(spent)) spent of $\(Int(category.amount))")
-                                .font(.subheadline)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(16)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(AppTheme.cardStroke, lineWidth: 1)
-                    )
-                    .padding(.horizontal)
-                    
-                    // Tabs for Insights and Transactions
-                    TabView {
-                        // Insights tab
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 16) {
-                                ForEach(insights.indices, id: \.self) { index in
-                                    insightCard(text: insights[index], index: index)
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                        .tabItem {
-                            Image(systemName: "lightbulb.fill")
-                            Text("Insights")
-                        }
-                        
-                        // Transactions tab
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                ForEach(transactions) { transaction in
-                                    transactionRow(transaction)
-                                        .padding(.horizontal)
-                                }
-                            }
-                            .padding(.top, 8)
-                        }
-                        .tabItem {
-                            Image(systemName: "list.bullet")
-                            Text("Transactions")
-                        }
-                    }
-                    .tabViewStyle(PageTabViewStyle())
-                    
-                    // Close button
-                    Button(action: {
-                        presentationMode = false
-                    }) {
-                        Text("Close")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(AppTheme.primaryGreen)
-                            .cornerRadius(12)
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 20)
-                }
-                .padding(.top, 8)
-            }
-            .navigationBarHidden(true)
-        }
-    }
-    
-    // MARK: - Helper Views
-    
-    private func insightCard(text: String, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if text.starts(with: "-") {
-                // List item
-                HStack(alignment: .top, spacing: 10) {
-                    Circle()
-                        .fill(category.color)
-                        .frame(width: 8, height: 8)
-                        .padding(.top, 6)
-                    
-                    Text(text.dropFirst(2))
-                        .foregroundColor(AppTheme.textColor)
-                }
-                .padding(.leading, 20)
-            } else {
-                // Regular insight
-                HStack(alignment: .top, spacing: 15) {
-                    // Icon
-                    ZStack {
-                        Circle()
-                            .fill(category.color.opacity(0.2))
-                            .frame(width: 36, height: 36)
-                        
-                        Image(systemName: insightIcon(for: index))
-                            .font(.system(size: 16))
-                            .foregroundColor(category.color)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(text)
-                            .foregroundColor(AppTheme.textColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(AppTheme.cardBackground)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppTheme.cardStroke, lineWidth: 1)
-        )
-    }
-    
-    private func transactionRow(_ transaction: PlaidTransaction) -> some View {
-        HStack(spacing: 15) {
-            // Date column
-            VStack(alignment: .center, spacing: 2) {
-                Text(formatDay(transaction.date))
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(AppTheme.textColor)
-                
-                Text(formatMonth(transaction.date))
-                    .font(.caption2)
-                    .foregroundColor(AppTheme.textColor.opacity(0.6))
-            }
-            .frame(width: 40)
-            
-            // Transaction details
-            VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.merchantName)
-                    .font(.subheadline)
-                    .foregroundColor(AppTheme.textColor)
-                
-                if !transaction.name.isEmpty && transaction.name != transaction.merchantName {
-                    Text(transaction.name)
-                        .font(.caption)
-                        .foregroundColor(AppTheme.textColor.opacity(0.6))
-                }
-            }
-            
-            Spacer()
-            
-            // Amount
-            Text("$\(String(format: "%.2f", transaction.amount))")
-                .font(.subheadline)
-                .foregroundColor(transaction.amount > 0 ? AppTheme.expenseColor : AppTheme.primaryGreen)
-        }
-        .padding()
-        .background(AppTheme.cardBackground)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppTheme.cardStroke, lineWidth: 1)
-        )
-    }
-    
-    // MARK: - Helper Functions
-    
-    private func insightIcon(for index: Int) -> String {
-        let icons = [
-            "chart.pie.fill",
-            "arrow.up.right",
-            "cart.fill",
-            "calendar",
-            "arrow.triangle.swap",
-            "dollarsign.circle.fill",
-            "waveform.path.ecg",
-            "lightbulb.fill"
-        ]
+    // Static method to determine if a category is essential
+    static func isEssentialCategory(_ name: String) -> Bool {
+        let essentialCategories = ["Groceries", "Rent", "Utilities", "Transportation",
+                                  "Healthcare", "Insurance", "Housing", "Medical",
+                                  "Bills", "Mortgage"]
         
-        return icons[index % icons.count]
+        return essentialCategories.contains { essential in
+            name.lowercased().contains(essential.lowercased())
+        }
     }
     
-    private func formatDay(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "dd"
-        return formatter.string(from: date)
+    // MARK: - Constants
+    
+    // Common icons for categories
+    private var commonIcons: [String] {
+        [
+            "house.fill", "cart.fill", "car.fill", "fork.knife",
+            "heart.fill", "bolt.fill", "tv.fill", "gamecontroller.fill",
+            "airplane", "gift.fill", "dollarsign.circle.fill", "creditcard.fill",
+            "book.fill", "graduationcap.fill", "bag.fill", "tag.fill"
+        ]
     }
     
-    private func formatMonth(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM"
-        return formatter.string(from: date)
+    // Theme colors for categories
+    private var themeColors: [Color] {
+        [
+            AppTheme.primaryGreen, AppTheme.accentBlue, AppTheme.accentPurple,
+            Color(hex: "#FF5757"), Color(hex: "#FFD700"), Color(hex: "#50C878"),
+            Color(hex: "#FF8C00"), Color(hex: "#9370DB"), Color(hex: "#DA70D6"),
+            Color(hex: "#20B2AA"), Color(hex: "#32CD32"), Color(hex: "#FA8072")
+        ]
     }
 }
 
-struct FormField<Content: View>: View {
-    let title: String
-    let isRequired: Bool
-    let content: Content
-    
-    init(title: String, isRequired: Bool = false, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.isRequired = isRequired
-        self.content = content()
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundColor(AppTheme.textColor.opacity(0.8))
-                
-                if isRequired {
-                    Text("*")
-                        .foregroundColor(Color(hex: "#FF5757"))
-                }
-            }
-            
-            content
-        }
-    }
-}

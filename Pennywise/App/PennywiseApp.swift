@@ -1,12 +1,11 @@
 //
-//  PennywiseApp 2.swift
+//  PennywiseApp.swift
 //  Pennywise
 //
 //  Created by Arnav Varyani on 4/24/25.
 //
 
 import SwiftUI
-
 
 @main
 struct PennywiseApp: App {
@@ -21,6 +20,11 @@ struct PennywiseApp: App {
     // App state observers
     @Environment(\.scenePhase) private var scenePhase
     
+    init() {
+        // Configure navigation appearance globally
+        configureAppAppearance()
+    }
+    
     var body: some Scene {
         WindowGroup {
             ZStack {
@@ -29,14 +33,9 @@ struct PennywiseApp: App {
                     .environmentObject(authService)
                     .environmentObject(plaidManager)
                     .preferredColorScheme(.dark) // Force dark mode for consistency
-                    .onAppear {
-                        // App configuration
-                        configureAppAppearance()
-                    }
                     .onChange(of: scenePhase) { newPhase in
                         handleScenePhaseChange(newPhase)
                     }
-                 
                 
                 if launchScreenManager.showLaunchScreen {
                     LaunchScreenView()
@@ -68,7 +67,7 @@ struct PennywiseApp: App {
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().tintColor = UIColor(AppTheme.primaryGreen)
         
-        // Configure tab bar appearance
+        // Configure tab bar appearance - Not used directly but sets defaults for SwiftUI TabViews
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
         tabBarAppearance.backgroundColor = UIColor(AppTheme.backgroundPrimary)
@@ -84,7 +83,7 @@ struct PennywiseApp: App {
             print("App became active")
             // Check if we need to refresh data
             if authService.isAuthenticated {
-              //  plaidManager.refreshAllData()
+                // Refresh data if needed
             }
         case .inactive:
             print("App became inactive")

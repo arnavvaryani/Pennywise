@@ -37,9 +37,16 @@ struct InsightsView: View {
         case .week:
             startDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
         case .month:
-            startDate = calendar.date(byAdding: .month, value: -1, to: now) ?? now
+            // Get the first day of the current month
+            var components = calendar.dateComponents([.year, .month], from: now)
+            components.day = 1
+            startDate = calendar.date(from: components) ?? calendar.date(byAdding: .month, value: -1, to: now) ?? now
         case .year:
-            startDate = calendar.date(byAdding: .year, value: -1, to: now) ?? now
+            // Get the first day of the current year
+            var components = calendar.dateComponents([.year], from: now)
+            components.month = 1
+            components.day = 1
+            startDate = calendar.date(from: components) ?? calendar.date(byAdding: .year, value: -1, to: now) ?? now
         }
         
         return plaidManager.transactions.filter { transaction in
@@ -635,9 +642,16 @@ struct InsightsView: View {
         if !subscriptionTransactions.isEmpty {
             let totalSubscriptions = subscriptionTransactions.reduce(0) { $0 + $1.amount }
             
+            let timeFrameText: String
+            switch selectedTimeframe {
+            case .week: timeFrameText = "weekly"
+            case .month: timeFrameText = "monthly"
+            case .year: timeFrameText = "yearly"
+            }
+            
             tips.append((
                 title: "Review Subscriptions",
-                description: "You have \(subscriptionTransactions.count) potential subscriptions costing $\(String(format: "%.2f", totalSubscriptions)) \(timeframeTitle == "This Week" ? "weekly" : timeframeTitle == "This Month" ? "monthly" : "yearly"). Consider canceling unused services.",
+                description: "You have \(subscriptionTransactions.count) potential subscriptions costing $\(String(format: "%.2f", totalSubscriptions)) \(timeFrameText). Consider canceling unused services.",
                 icon: "repeat"
             ))
         }
@@ -814,7 +828,10 @@ struct InsightsView: View {
                     .background(AppTheme.cardBackground)
                     .cornerRadius(12)
             } else {
-                ForEach(expenseTransactions.prefix(5)) { transaction in
+                // Sort transactions by date, newest first
+                let sortedTransactions = expenseTransactions.sorted(by: { $0.date > $1.date })
+                
+                ForEach(sortedTransactions.prefix(5)) { transaction in
                     HStack(spacing: 12) {
                         // Category icon
                         ZStack {
@@ -1181,6 +1198,10 @@ struct PieChartDataPoint: Identifiable {
     let amount: Double
     let color: Color
 }
+// MARK: - Supporting Views
+
+// Data structure for pie chart
+
 
 // Category Pie Chart View
 struct CategoryPieChartView: View {

@@ -12,16 +12,13 @@ struct BudgetPlannerView: View {
     @State private var monthlyIncome: Double = 0
     @State private var isRefreshing: Bool = false
     @State private var animateCards: Bool = false
-    @State private var isLoading: Bool = false // Changed from true to false for initial state
-    @State private var showingCategoryDetail: Bool = false
-    @State private var selectedCategory: BudgetCategory? = nil
+    @State private var isLoading: Bool = true
+    @State private var showingCategoryDetail = false
+    @State private var selectedCategoryId: String? = nil
     @State private var categorySpending: [String: Double] = [:]
     @State private var errorMessage: String? = nil
     @State private var showSuccessMessage = false
     @State private var successMessage = ""
-    
-    // New state variables for caching and optimization
-    @State private var hasLoaded: Bool = false
     
     // Budget metrics
     var totalBudget: Double {
@@ -66,6 +63,14 @@ struct BudgetPlannerView: View {
         }
     }
     
+    // Computed property to get the selected category
+    private var selectedCategory: BudgetCategory? {
+        if let id = selectedCategoryId {
+            return categories.first(where: { $0.id == id })
+        }
+        return nil
+    }
+    
     var body: some View {
         ZStack {
             // Background gradient
@@ -90,7 +95,10 @@ struct BudgetPlannerView: View {
         .sheet(isPresented: $showAddCategory) {
             AddBudgetCategoryView(onAdd: addCategory)
         }
-        .sheet(isPresented: $showingCategoryDetail) {
+        .sheet(isPresented: $showingCategoryDetail, onDismiss: {
+            // Clear selection when sheet is dismissed
+            selectedCategoryId = nil
+        }) {
             if let category = selectedCategory {
                 CategoryDetailView(
                     category: category,
@@ -124,11 +132,8 @@ struct BudgetPlannerView: View {
             }
         }
         .onAppear {
-            // Only initialize data if we haven't already loaded it
-            if !hasLoaded {
-                isLoading = true
-                initializeData()
-            }
+            isLoading = true
+            initializeData()
         }
         .alert(isPresented: $showSuccessMessage) {
             Alert(
@@ -259,15 +264,6 @@ struct BudgetPlannerView: View {
     // Budget overview card
     private var budgetOverviewCard: some View {
         HStack(spacing: 0) {
-            // Income
-            budgetStatColumn(
-                title: "Income",
-                amount: monthlyIncome,
-                icon: "arrow.down.circle.fill",
-                color: AppTheme.primaryGreen,
-                showBorder: true
-            )
-            
             // Budgeted
             budgetStatColumn(
                 title: "Budgeted",
@@ -294,6 +290,7 @@ struct BudgetPlannerView: View {
         )
     }
     
+    // Budget progress card
     private var budgetProgressCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Budget Progress")
@@ -419,8 +416,12 @@ struct BudgetPlannerView: View {
                             )
                             .fill(categories[index].color)
                             .onTapGesture {
-                                selectedCategory = categories[index]
-                                showingCategoryDetail = true
+                                // First set the selected category ID
+                                selectedCategoryId = categories[index].id
+                                // Then after a brief delay, show the sheet
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    showingCategoryDetail = true
+                                }
                             }
                         }
                         
@@ -445,7 +446,7 @@ struct BudgetPlannerView: View {
                     
                     // Legend
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(categories.prefix(5), id: \.name) { category in
+                        ForEach(categories.prefix(5)) { category in
                             HStack(spacing: 8) {
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(category.color)
@@ -489,6 +490,68 @@ struct BudgetPlannerView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(AppTheme.cardStroke, lineWidth: 1)
+        )
+    }
+    
+    // Categories list view
+    private func categoriesListView(categories: [BudgetCategory]) -> some View {
+        VStack(spacing: 16) {
+            if categories.isEmpty {
+                // Empty state is already shown in budgetAllocationCard
+                EmptyView()
+            } else {
+                ForEach(categories) { category in
+                    BudgetCategoryRow(
+                        category: category,
+                        spent: calculateSpentForCategory(category),
+                        onTap: {
+                            // First set the selected category ID
+                            selectedCategoryId = category.id
+                            // Then after a brief delay, show the sheet
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                showingCategoryDetail = true
+                            }
+                        },
+                        onAmountChange: { newAmount in
+                            updateCategoryAmount(category, newAmount)
+                        },
+                        onDelete: { deleteCategory(category) }
+                    )
+                    .padding(.horizontal)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                }
+            }
+        }
+    }
+    
+    // Budget stat column
+    private func budgetStatColumn(title: String, amount: Double, icon: String, color: Color, showBorder: Bool = false) -> some View {
+        VStack(spacing: 10) {
+            // Icon
+            Image(systemName: icon)
+                .font(.system(size: 24))
+                .foregroundColor(color)
+            
+            // Amount
+            Text("$\(Int(abs(amount)))")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(amount >= 0 ? AppTheme.textColor : AppTheme.expenseColor)
+            
+            // Title
+            Text(title)
+                .font(.caption)
+                .foregroundColor(AppTheme.textColor.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(AppTheme.cardBackground)
+        .overlay(
+            showBorder ? Rectangle()
+                .frame(width: 1)
+                .foregroundColor(AppTheme.cardStroke)
+                .padding(.vertical, 10)
+                .position(x: UIScreen.main.bounds.width / 2, y: 0) : nil
         )
     }
     
@@ -539,65 +602,7 @@ struct BudgetPlannerView: View {
         )
     }
     
-    // Categories list view
-    private func categoriesListView(categories: [BudgetCategory]) -> some View {
-        VStack(spacing: 16) {
-            if categories.isEmpty {
-                // Empty state is already shown in budgetAllocationCard
-                EmptyView()
-            } else {
-                ForEach(Array(categories.enumerated()), id: \.element.name) { index, category in
-                    BudgetCategoryRow(
-                        category: category,
-                        spent: calculateSpentForCategory(category),
-                        onTap: {
-                            selectedCategory = category
-                            showingCategoryDetail = true
-                        },
-                        onAmountChange: { newAmount in
-                            updateCategoryAmount(category, newAmount)
-                        },
-                        onDelete: { deleteCategory(category) }
-                    )
-                    .padding(.horizontal)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
-                }
-            }
-        }
-    }
-    
-    // Budget stat column
-    private func budgetStatColumn(title: String, amount: Double, icon: String, color: Color, showBorder: Bool = false) -> some View {
-        VStack(spacing: 10) {
-            // Icon
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(color)
-            
-            // Amount
-            Text("$\(Int(abs(amount)))")
-                .font(.title3)
-                .fontWeight(.bold)
-                .foregroundColor(amount >= 0 ? AppTheme.textColor : AppTheme.expenseColor)
-            
-            // Title
-            Text(title)
-                .font(.caption)
-                .foregroundColor(AppTheme.textColor.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(AppTheme.cardBackground)
-        .overlay(
-            showBorder ? Rectangle()
-                .frame(width: 1)
-                .foregroundColor(AppTheme.cardStroke)
-                .padding(.vertical, 10)
-                .position(x: UIScreen.main.bounds.width / 3, y: 0) : nil
-        )
-    }
-    
-    // MARK: - Firebase Data Functions
+    // MARK: - Initialize Data
     
     // Initialize data
     private func initializeData() {
@@ -609,6 +614,11 @@ struct BudgetPlannerView: View {
         
         // Calculate spending for each category
         calculateCategorySpending()
+        
+        // Turn off loading state
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isLoading = false
+        }
     }
     
     // Load monthly income
@@ -694,6 +704,7 @@ struct BudgetPlannerView: View {
                        let colorHex = document.data()["color"] as? String {
                         
                         let category = BudgetCategory(
+                
                             name: name,
                             amount: amount,
                             icon: icon,
@@ -705,8 +716,8 @@ struct BudgetPlannerView: View {
                 }
                 
                 self.categories = loadedCategories
-                // Mark that we've successfully loaded data
-                self.hasLoaded = true
+                self.isLoading = false
+            } else {
                 self.isLoading = false
             }
         }
@@ -757,11 +768,8 @@ struct BudgetPlannerView: View {
             return
         }
         
-        // Create a unique ID for this category
-        let categoryId = UUID().uuidString
-        
         let db = Firestore.firestore()
-        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
+        let categoryRef = db.collection("users/\(userId)/budgetCategories").document()
         
         // Convert Color to hex string
         let colorHex = category.color.hexString
@@ -781,8 +789,14 @@ struct BudgetPlannerView: View {
                 return
             }
             
-            // Add the category locally with the Firestore ID as the ID
-            var newCategory = category
+            // Add the category locally with the Firestore ID
+            let newCategory = BudgetCategory(
+
+                name: category.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                amount: category.amount,
+                icon: category.icon,
+                color: category.color
+            )
             
             // Update our local categories array
             withAnimation {
@@ -798,12 +812,10 @@ struct BudgetPlannerView: View {
             return
         }
         
-        // Find the category index
-        if let index = categories.firstIndex(where: { $0.name == category.name }) {
+        // Find the category ID
+        if let index = categories.firstIndex(where: { $0.id == category.id }) {
             let db = Firestore.firestore()
-            // Use the category name to form a predictable ID
-            let categoryId = UUID().uuidString
-            let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
+            let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
             
             // Convert Color to hex string
             let colorHex = category.color.hexString
@@ -820,17 +832,6 @@ struct BudgetPlannerView: View {
             categoryRef.updateData(data) { error in
                 if let error = error {
                     self.errorMessage = "Error updating category: \(error.localizedDescription)"
-                    // Try to set the data instead of update, in case the document doesn't exist
-                    categoryRef.setData(data) { error in
-                        if let error = error {
-                            self.errorMessage = "Error updating category: \(error.localizedDescription)"
-                            return
-                        }
-                        
-                        withAnimation {
-                            self.categories[index] = category
-                        }
-                    }
                     return
                 }
                 
@@ -848,43 +849,25 @@ struct BudgetPlannerView: View {
             return
         }
         
-        // Find the category by name
-        if let index = categories.firstIndex(where: { $0.name == category.name }) {
-            let db = Firestore.firestore()
-            // Use name to find the document
-            let query = db.collection("users/\(userId)/budgetCategories")
-                .whereField("name", isEqualTo: category.name)
+        let db = Firestore.firestore()
+        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
+        
+        categoryRef.updateData([
+            "amount": newAmount,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]) { error in
+            if let error = error {
+                self.errorMessage = "Error updating category amount: \(error.localizedDescription)"
+                return
+            }
             
-            // Get the document ID
-            query.getDocuments { (snapshot, error) in
-                if let error = error {
-                    self.errorMessage = "Error finding category: \(error.localizedDescription)"
-                    return
-                }
+            // Update local category
+            if let index = self.categories.firstIndex(where: { $0.id == category.id }) {
+                var updatedCategory = self.categories[index]
+                updatedCategory.amount = newAmount
                 
-                if let document = snapshot?.documents.first {
-                    let categoryId = document.documentID
-                    let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
-                    
-                    categoryRef.updateData([
-                        "amount": newAmount,
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ]) { error in
-                        if let error = error {
-                            self.errorMessage = "Error updating category amount: \(error.localizedDescription)"
-                            return
-                        }
-                        
-                        // Update local category
-                        var updatedCategory = self.categories[index]
-                        updatedCategory.amount = newAmount
-                        
-                        withAnimation {
-                            self.categories[index] = updatedCategory
-                        }
-                    }
-                } else {
-                    self.errorMessage = "Category not found in Firestore"
+                withAnimation {
+                    self.categories[index] = updatedCategory
                 }
             }
         }
@@ -897,78 +880,184 @@ struct BudgetPlannerView: View {
             return
         }
         
-        // Find the category by name
         let db = Firestore.firestore()
-        let query = db.collection("users/\(userId)/budgetCategories")
-            .whereField("name", isEqualTo: category.name)
+        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
         
-        // Get the document ID
-        query.getDocuments { (snapshot, error) in
+        categoryRef.delete { error in
             if let error = error {
-                self.errorMessage = "Error finding category: \(error.localizedDescription)"
+                self.errorMessage = "Error deleting category: \(error.localizedDescription)"
                 return
             }
             
-            if let document = snapshot?.documents.first {
-                let categoryId = document.documentID
-                let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
-                
-                categoryRef.delete { error in
-                    if let error = error {
-                        self.errorMessage = "Error deleting category: \(error.localizedDescription)"
-                        return
-                    }
-                    
-                    // Remove from local array
-                    withAnimation {
-                        self.categories.removeAll { $0.name == category.name }
-                    }
-                }
-            } else {
-                self.errorMessage = "Category not found in Firestore"
+            // Remove from local array
+            withAnimation {
+                self.categories.removeAll { $0.id == category.id }
             }
         }
     }
     
-    // Update budget usage in Firebase
-    private func updateBudgetUsageInFirebase() {
+    // MARK: - Auto Budget Method
+    
+    // Auto budget function
+    func autoBudget() {
+        // First verify we have income amount
+        if monthlyIncome <= 0 {
+            calculateMonthlyIncomeFromTransactions()
+            
+            if monthlyIncome <= 0 {
+                monthlyIncome = 5000 // Set default for testing
+                errorMessage = "Using a default monthly income of $5,000 for budget calculation."
+                return
+            }
+        }
+        
+        isLoading = true
+        
+        // Define default categories
+        let defaultCategories = [
+            // Needs (50%)
+            ("Housing", "house.fill", AppTheme.primaryGreen, 0.25, true),  // 25% of income
+            ("Groceries", "cart.fill", AppTheme.accentBlue, 0.10, true),   // 10% of income
+            ("Utilities", "bolt.fill", Color(hex: "#9370DB"), 0.05, true), // 5% of income
+            ("Transportation", "car.fill", AppTheme.accentPurple, 0.05, true), // 5% of income
+            ("Healthcare", "heart.fill", Color(hex: "#FF5757"), 0.05, true), // 5% of income
+            
+            // Wants (30%)
+            ("Dining Out", "fork.knife", Color(hex: "#FF8C00"), 0.08, false), // 8% of income
+            ("Entertainment", "play.tv", Color(hex: "#FFD700"), 0.07, false), // 7% of income
+            ("Shopping", "bag.fill", Color(hex: "#FF69B4"), 0.08, false),    // 8% of income
+            ("Subscriptions", "repeat", Color(hex: "#BA55D3"), 0.04, false), // 4% of income
+            ("Personal Care", "person.fill", Color(hex: "#FF7F50"), 0.03, false), // 3% of income
+            
+            // Savings/Debt (20%)
+            ("Savings", "banknote.fill", AppTheme.primaryGreen, 0.15, false), // 15% of income
+            ("Debt Repayment", "creditcard.fill", Color(hex: "#20B2AA"), 0.05, false) // 5% of income
+        ]
+        
         guard let userId = Auth.auth().currentUser?.uid else {
             errorMessage = "User not logged in"
+            isLoading = false
             return
         }
         
-        // Get current month and year
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM"
-        let currentYearMonth = dateFormatter.string(from: Date())
-        
-        // Calculate spent amount per category
-        var categoryData: [String: [String: Double]] = [:]
-        var totalSpent: Double = 0
-        
-        for category in categories {
-            let spent = calculateSpentForCategory(category)
-            categoryData[category.name] = [
-                "budget": category.amount,
-                "spent": spent
-            ]
-            totalSpent += spent
-        }
-        
-        // Save to Firestore
         let db = Firestore.firestore()
-        let monthlyBudgetRef = db.collection("users").document(userId).collection("budget").document(currentYearMonth)
         
-        let data: [String: Any] = [
-            "totalBudget": totalBudget,
-            "totalSpent": totalSpent,
-            "categories": categoryData,
-            "updatedAt": FieldValue.serverTimestamp()
-        ]
-        
-        monthlyBudgetRef.setData(data, merge: true) { error in
+        // First, get all existing categories to identify which to update vs. create
+        db.collection("users/\(userId)/budgetCategories").getDocuments { [self] snapshot, error in
             if let error = error {
-                self.errorMessage = "Error updating budget: \(error.localizedDescription)"
+                self.errorMessage = "Error fetching categories: \(error.localizedDescription)"
+                self.isLoading = false
+                return
+            }
+            
+            // Dictionary to track existing categories by name
+            var existingCategoriesById: [String: BudgetCategory] = [:]
+            var existingCategoriesByName: [String: BudgetCategory] = [:]
+            
+            if let documents = snapshot?.documents {
+                for document in documents {
+                    if let name = document.data()["name"] as? String,
+                       let amount = document.data()["amount"] as? Double,
+                       let icon = document.data()["icon"] as? String,
+                       let colorHex = document.data()["color"] as? String {
+                        
+                        let category = BudgetCategory(
+                          
+                            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                            amount: amount,
+                            icon: icon,
+                            color: Color(hex: colorHex)
+                        )
+                        
+                        existingCategoriesById[document.documentID] = category
+                        existingCategoriesByName[name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)] = category
+                    }
+                }
+            }
+            
+            // Now create a batch to update or add categories
+            let batch = db.batch()
+            
+            // Track categories that will be updated or added
+            var categoriesToUpdate: [BudgetCategory] = []
+            var newCategoriesToAdd: [BudgetCategory] = []
+            
+            // Process each default category
+            for (categoryName, icon, color, percentage, isEssential) in defaultCategories {
+                let categoryNameLowercased = categoryName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                let budgetAmount = monthlyIncome * percentage
+                
+                // Check if this category already exists (by normalized name)
+                if let existingCategory = existingCategoriesByName[categoryNameLowercased] {
+                    // Update existing category with new amount but keep other properties
+                    let categoryRef = db.collection("users/\(userId)/budgetCategories").document(existingCategory.id)
+                    
+                    batch.updateData([
+                        "amount": budgetAmount,
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ], forDocument: categoryRef)
+                    
+                    // Update local copy with new amount
+                    var updatedCategory = existingCategory
+                    updatedCategory.amount = budgetAmount
+                    categoriesToUpdate.append(updatedCategory)
+                } else {
+                    // Create new category
+                    let newCategoryRef = db.collection("users/\(userId)/budgetCategories").document()
+                    
+                    let newCategoryData: [String: Any] = [
+                        "name": categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        "amount": budgetAmount,
+                        "icon": icon,
+                        "color": color.hexString,
+                        "isEssential": isEssential,
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ]
+                    
+                    batch.setData(newCategoryData, forDocument: newCategoryRef)
+                    
+                    // Create local copy for immediate UI update
+                    let newCategory = BudgetCategory(
+            
+                        name: categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        amount: budgetAmount,
+                        icon: icon,
+                        color: color
+                    )
+                    
+                    newCategoriesToAdd.append(newCategory)
+                }
+            }
+            
+            // Commit all the changes
+            batch.commit { error in
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    
+                    if let error = error {
+                        self.errorMessage = "Error updating budget: \(error.localizedDescription)"
+                        return
+                    }
+                    
+                    // Update our local array
+                    
+                    // First update existing categories
+                    for updatedCategory in categoriesToUpdate {
+                        if let index = self.categories.firstIndex(where: { $0.id == updatedCategory.id }) {
+                            self.categories[index] = updatedCategory
+                        }
+                    }
+                    
+                    // Then add new categories
+                    self.categories.append(contentsOf: newCategoriesToAdd)
+                    
+                    // Show success message
+                    self.successMessage = "Budget has been optimized with the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings & debt repayment."
+                    self.showSuccessMessage = true
+                    
+                    // Update budget usage
+                    self.calculateCategorySpending()
+                }
             }
         }
     }
@@ -1014,169 +1103,6 @@ struct BudgetPlannerView: View {
         let precedingTotal = categories.prefix(index).reduce(0) { $0 + $1.amount }
         let categoryAmount = categories[index].amount
         return .degrees((precedingTotal + categoryAmount) / totalBudget * 360 - 90)
-    }
-    
-    // MARK: - Auto Budget Function
-    
-    // Improved auto-budget function
-    private func autoBudget() {
-        // First verify we have income amount
-        if monthlyIncome <= 0 {
-            calculateMonthlyIncomeFromTransactions()
-            
-            if monthlyIncome <= 0 {
-                monthlyIncome = 5000 // Set default for testing
-                errorMessage = "Using a default monthly income of $5,000 for budget calculation. You can update this in your profile settings."
-                return
-            }
-        }
-        
-        isLoading = true
-        
-        let defaultCategories = [
-            // Needs (50%)
-            ("Housing", "house.fill", AppTheme.primaryGreen, 0.25, true),  // 25% of income
-            ("Groceries", "cart.fill", AppTheme.accentBlue, 0.10, true),   // 10% of income
-            ("Utilities", "bolt.fill", Color(hex: "#9370DB"), 0.05, true), // 5% of income
-            ("Transportation", "car.fill", AppTheme.accentPurple, 0.05, true), // 5% of income
-            ("Healthcare", "heart.fill", Color(hex: "#FF5757"), 0.05, true), // 5% of income
-            
-            // Wants (30%)
-            ("Dining Out", "fork.knife", Color(hex: "#FF8C00"), 0.08, false), // 8% of income
-            ("Entertainment", "play.tv", Color(hex: "#FFD700"), 0.07, false), // 7% of income
-            ("Shopping", "bag.fill", Color(hex: "#FF69B4"), 0.08, false),    // 8% of income
-            ("Subscriptions", "repeat", Color(hex: "#BA55D3"), 0.04, false), // 4% of income
-            ("Personal Care", "person.fill", Color(hex: "#FF7F50"), 0.03, false), // 3% of income
-            
-            // Savings/Debt (20%)
-            ("Savings", "banknote.fill", AppTheme.primaryGreen, 0.15, false), // 15% of income
-            ("Debt Repayment", "creditcard.fill", Color(hex: "#20B2AA"), 0.05, false) // 5% of income
-        ]
-        
-        guard let userId = Auth.auth().currentUser?.uid else {
-            errorMessage = "User not logged in"
-            isLoading = false
-            return
-        }
-        
-        let db = Firestore.firestore()
-        
-        // First, get all existing categories to avoid duplicates
-        db.collection("users/\(userId)/budgetCategories").getDocuments { [self] snapshot, error in
-            if let error = error {
-                self.errorMessage = "Error fetching categories: \(error.localizedDescription)"
-                self.isLoading = false
-                return
-            }
-            
-            // Dictionary to track existing categories by name
-            var existingCategoriesByName: [String: BudgetCategory] = [:]
-            
-            if let documents = snapshot?.documents {
-                for document in documents {
-                    if let name = document.data()["name"] as? String,
-                       let amount = document.data()["amount"] as? Double,
-                       let icon = document.data()["icon"] as? String,
-                       let colorHex = document.data()["color"] as? String {
-                        
-                        let category = BudgetCategory(
-                            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                            amount: amount,
-                            icon: icon,
-                            color: Color(hex: colorHex)
-                        )
-                        
-                        existingCategoriesByName[name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)] = category
-                    }
-                }
-            }
-            
-            // Now create a batch to update or add categories
-            let batch = db.batch()
-            
-            // Track categories that will be updated or added
-            var categoriesToUpdate: [BudgetCategory] = []
-            var newCategoriesToAdd: [BudgetCategory] = []
-            
-            // Process each default category
-            for (categoryName, icon, color, percentage, isEssential) in defaultCategories {
-                let categoryNameLowercased = categoryName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                let budgetAmount = monthlyIncome * percentage
-                
-                // Check if this category already exists (by normalized name)
-                if let existingCategory = existingCategoriesByName[categoryNameLowercased] {
-                    // Find the document ID for this category
-                    db.collection("users/\(userId)/budgetCategories")
-                        .whereField("name", isEqualTo: existingCategory.name)
-                        .getDocuments { (snapshot, error) in
-                            if let document = snapshot?.documents.first {
-                                let categoryRef = db.collection("users/\(userId)/budgetCategories").document(document.documentID)
-                                
-                                categoryRef.updateData([
-                                    "amount": budgetAmount,
-                                    "updatedAt": FieldValue.serverTimestamp()
-                                ]) { error in
-                                    if let error = error {
-                                        self.errorMessage = "Error updating category: \(error.localizedDescription)"
-                                        return
-                                    }
-                                    
-                                    // Update local copy with new amount
-                                    if let index = self.categories.firstIndex(where: { $0.name == existingCategory.name }) {
-                                        var updatedCategory = self.categories[index]
-                                        updatedCategory.amount = budgetAmount
-                                        
-                                        withAnimation {
-                                            self.categories[index] = updatedCategory
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                } else {
-                    // Create new category
-                    let newCategoryId = UUID().uuidString
-                    let newCategoryRef = db.collection("users/\(userId)/budgetCategories").document(newCategoryId)
-                    
-                    let newCategoryData: [String: Any] = [
-                        "name": categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
-                        "amount": budgetAmount,
-                        "icon": icon,
-                        "color": color.hexString,
-                        "isEssential": isEssential,
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ]
-                    
-                    newCategoryRef.setData(newCategoryData) { error in
-                        if let error = error {
-                            self.errorMessage = "Error adding category: \(error.localizedDescription)"
-                            return
-                        }
-                        
-                        // Create local copy for immediate UI update
-                        let newCategory = BudgetCategory(
-                            name: categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
-                            amount: budgetAmount,
-                            icon: icon,
-                            color: color
-                        )
-                        
-                        withAnimation {
-                            self.categories.append(newCategory)
-                        }
-                    }
-                }
-            }
-            
-            // Show success message and finish loading
-            self.isLoading = false
-            self.successMessage = "Budget has been optimized with the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings & debt repayment."
-            self.showSuccessMessage = true
-            
-            // Update budget usage
-            self.calculateCategorySpending()
-            self.updateBudgetUsageInFirebase()
-        }
     }
 }
 

@@ -169,27 +169,22 @@ struct FinanceHomeView: View {
                 Text("Total Bank Balance")
                     .font(.headline)
                     .foregroundColor(AppTheme.textColor.opacity(0.8))
-
                 Spacer()
-
                 Button {
-                    withAnimation(.spring()) {
-                        hideBalance.toggle()
-                    }
+                    withAnimation(.spring()) { hideBalance.toggle() }
                 } label: {
                     Image(systemName: hideBalance ? "eye" : "eye.slash")
                         .font(.subheadline)
                         .foregroundColor(AppTheme.textColor)
                         .padding(6)
-                        .background(
-                            Circle()
-                                .fill(AppTheme.cardBackground)
-                                .shadow(color: .black.opacity(0.06), radius: 2, x: 0, y: 1)
-                        )
+                        .background(Circle()
+                            .fill(AppTheme.cardBackground)
+                            .shadow(color: .black.opacity(0.06), radius: 2, x: 0, y: 1))
                 }
                 .buttonStyle(PlainButtonStyle())
             }
 
+            // MARK: Balance
             Group {
                 if hideBalance {
                     Text("$•••••••")
@@ -206,8 +201,8 @@ struct FinanceHomeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Divider()
-                .background(AppTheme.cardStroke)
 
+            // ✂️ ONLY keep Income & Expenses
             HStack(spacing: 12) {
                 // Monthly Income
                 VStack(alignment: .leading, spacing: 4) {
@@ -233,30 +228,6 @@ struct FinanceHomeView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Total Debt")
-                        .font(.caption)
-                        .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    Text(hideBalance ? "$•••••"
-                         : "$\(calculateTotalDebt(), specifier: "%.2f")")
-                        .font(.headline)
-                        .foregroundColor(AppTheme.expenseColor)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Investments")
-                        .font(.caption)
-                        .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    Text(hideBalance ? "$•••••"
-                         : "$\(calculateTotalInvestments(), specifier: "%.2f")")
-                        .font(.headline)
-                        .foregroundColor(AppTheme.primaryGreen)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
         }
         .padding(20)
         .background(
@@ -270,6 +241,7 @@ struct FinanceHomeView: View {
         )
         .padding(.horizontal)
     }
+
 
     
     private var transactionsSection: some View {
