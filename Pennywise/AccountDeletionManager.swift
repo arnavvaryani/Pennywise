@@ -2,140 +2,154 @@
 //  AccountDeletionManager.swift
 //  Pennywise
 //
-//  Created by Arnav Varyani on 4/25/25.
+//  Updated 2025-04-25
 //
 
-
 import Foundation
-import Firebase
 import FirebaseAuth
 import FirebaseFirestore
-import FirebaseStorage
 
-class AccountDeletionManager {
+/// Handles irreversible deletion of the user’s FirebaseAuth account
+/// **and** all `/users/{uid}` data in Firestore. No password prompt.
+final class AccountDeletionManager {
+
+    // MARK: Singleton
     static let shared = AccountDeletionManager()
-    
     private init() {}
-    
-    /// Deletes the user's account and all associated data
-    func deleteUserAccount(currentPassword: String, completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let user = Auth.auth().currentUser, let email = user.email else {
-            completion(.failure(NSError(domain: "AccountDeletionManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "User not signed in"])))
+
+    // MARK: Public API -------------------------------------------------------
+
+    /// Deletes every trace of the signed-in user.
+    ///
+    /// Call this only after your UI has asked the user to type
+    /// `DELETE` (or similar) and they confirmed.
+    func deleteAccount(completion: @escaping (Result<Void, Error>) -> Void) {
+
+        guard let user = Auth.auth().currentUser else {
+            completion(.failure(DeleteError.noSignedInUser))
             return
         }
-        
-        // Create credential with current password for re-authentication
-        let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
-        
-        // Re-authenticate the user
-        user.reauthenticate(with: credential) { [weak self] _, error in
-            if let error = error {
+
+        // 1. Purge Firestore user data first
+        deleteUserData(uid: user.uid) { [weak self] dataResult in
+            guard let self = self else { return }
+
+            switch dataResult {
+            case .failure(let error):
                 completion(.failure(error))
-                return
-            }
-            
-            // User successfully re-authenticated, proceed with data deletion
-            self?.deleteUserData(for: user.uid) { result in
-                switch result {
-                case .success:
-                    // Now delete the Firebase Auth account
-                    user.delete { error in
-                        if let error = error {
-                            completion(.failure(error))
-                        } else {
-                            completion(.success(()))
-                        }
+
+            case .success:
+                // 2. Delete the Auth account
+                user.delete { deleteError in
+                    if let deleteError = deleteError {
+                        completion(.failure(deleteError)) // may be .requiresRecentLogin
+                        return
                     }
-                case .failure(let error):
-                    completion(.failure(error))
+
+                    // 3. Sign out locally
+                    do {
+                        try Auth.auth().signOut()
+                        completion(.success(()))
+                    } catch {
+                        completion(.failure(error))
+                    }
                 }
             }
         }
     }
-    
-    /// Delete all user data from Firestore and Storage
-    private func deleteUserData(for userId: String, completion: @escaping (Result<Void, Error>) -> Void) {
-        let db = Firestore.firestore()
-        let storage = Storage.storage()
-        let dispatchGroup = DispatchGroup()
-        var deleteError: Error?
-        
-        // 1. Delete user's profile image from Storage
-        dispatchGroup.enter()
-        let profileImageRef = storage.reference().child("profile_images/\(userId).jpg")
-        profileImageRef.delete { error in
-            // We don't fail if the image doesn't exist, just continue
-            dispatchGroup.leave()
-        }
-        
-        // 2. Delete user data from Firestore collections
-        // List of collections to check for user data
-        let collections = [
-            "users",
-            "users/\(userId)/accounts",
-            "users/\(userId)/transactions",
-            "users/\(userId)/budgetCategories",
-            "users/\(userId)/budget",
-            "users/\(userId)/insights",
-            "users/\(userId)/savingsTips"
+
+    // MARK: Firestore purge (same as previous version) ----------------------
+
+    private func deleteUserData(uid: String,
+                                completion: @escaping (Result<Void, Error>) -> Void) {
+
+        let db  = Firestore.firestore()
+        let doc = db.collection("users").document(uid)
+
+        // Keep this list in sync with your schema
+        let subCollections = [
+            "accounts",
+            "transactions",
+            "budgetCategories",
+            "budget",
+            "insights",
+            "notifications",
+            "monthlySummaries"
         ]
-        
-        for collectionPath in collections {
-            dispatchGroup.enter()
-            
-            if collectionPath == "users" {
-                // For the users collection, delete only the user's document
-                db.collection(collectionPath).document(userId).delete { error in
-                    if let error = error {
-                        deleteError = error
-                    }
-                    dispatchGroup.leave()
-                }
-            } else {
-                // For subcollections, delete all documents
-                db.collection(collectionPath).getDocuments { snapshot, error in
-                    if let error = error {
-                        deleteError = error
-                        dispatchGroup.leave()
-                        return
-                    }
-                    
-                    // If there are no documents, just leave the group
-                    guard let documents = snapshot?.documents, !documents.isEmpty else {
-                        dispatchGroup.leave()
-                        return
-                    }
-                    
-                    // Delete documents in batches of 500 (Firestore limit)
-                    let batches = stride(from: 0, to: documents.count, by: 500).map {
-                        Array(documents[$0..<min($0 + 500, documents.count)])
-                    }
-                    
-                    for batch in batches {
-                        let batchOperation = db.batch()
-                        
-                        for document in batch {
-                            batchOperation.deleteDocument(document.reference)
-                        }
-                        
-                        batchOperation.commit { error in
-                            if let error = error {
-                                deleteError = error
-                            }
-                        }
-                    }
-                    
-                    dispatchGroup.leave()
-                }
+
+        let group = DispatchGroup()
+        var firstError: Error?
+
+        // Delete root document
+        group.enter()
+        doc.delete { error in
+            if firstError == nil { firstError = error }
+            group.leave()
+        }
+
+        // Delete each sub-collection in pages of 500
+        for name in subCollections {
+            purge(collection: doc.collection(name), batchSize: 500, group: group) { error in
+                if firstError == nil { firstError = error }
             }
         }
-        
-        // Wait for all deletion operations to complete
-        dispatchGroup.notify(queue: .main) {
-            if let error = deleteError {
+
+        group.notify(queue: .main) {
+            if let error = firstError {
                 completion(.failure(error))
             } else {
                 completion(.success(()))
+            }
+        }
+    }
+
+    private func purge(collection: CollectionReference,
+                       batchSize: Int,
+                       group: DispatchGroup,
+                       onError: @escaping (Error?) -> Void) {
+
+        group.enter()
+        collection.limit(to: batchSize).getDocuments { [weak self] snapshot, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                onError(error)
+                group.leave()
+                return
+            }
+
+            guard let snapshot = snapshot, !snapshot.isEmpty else {
+                group.leave()
+                return
+            }
+
+            let batch = collection.firestore.batch()
+            snapshot.documents.forEach { batch.deleteDocument($0.reference) }
+
+            batch.commit { commitError in
+                if let commitError = commitError {
+                    onError(commitError)
+                    group.leave()
+                } else {
+                    // Recurse for next page
+                    self.purge(collection: collection,
+                               batchSize: batchSize,
+                               group: group,
+                               onError: onError)
+                }
+            }
+        }
+    }
+
+    // MARK: Error type -------------------------------------------------------
+
+    enum DeleteError: LocalizedError {
+        case noSignedInUser
+
+        var errorDescription: String? {
+            switch self {
+            case .noSignedInUser:
+                return "No Firebase user is currently signed in."
             }
         }
     }

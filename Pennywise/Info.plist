@@ -4,5 +4,16 @@
 <dict>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.372185364016-2lqr5g9vgntthstavhb2ri9sbc2170d1</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -24,7 +24,6 @@ struct TabBar: View {
         TabItem(icon: "plus.circle.fill", title: "Add"),
         TabItem(icon: "target", title: "Budget"),
         TabItem(icon: "gear", title: "Settings"),
-        TabItem(icon: "brain.head.profile", title: "PennyGPT")
     ]
     
     var body: some View {
