@@ -68,12 +68,6 @@ struct FinanceHomeView: View {
                 .edgesIgnoringSafeArea(.all)
             
             VStack(spacing: 0) {
-                // Header with user info
-                headerView
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                
                 // Main content
                 if showAllTransactions {
                     allTransactionsView
@@ -120,33 +114,7 @@ struct FinanceHomeView: View {
     @State private var showTransactionDetail: Bool = false
     
     // MARK: - Subviews
-    
-    // Enhanced header view
-    private var headerView: some View {
-        HStack(alignment: .center, spacing: 8) {
-            // User profile
-            Button(action: {
-                withAnimation {
-                    showProfileSheet = true
-                }
-            }) {
-                HStack(spacing: 8) {
-                    // User profile image or icon (can keep existing code)
-                    
-                    VStack(alignment: .leading) {
-                        Text("Hi, \(userName.components(separatedBy: " ").first ?? userName)!")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(AppTheme.textColor)
-                    }
-                }
-            }
-            .buttonStyle(ScaleButtonStyle())
-            
-            Spacer()
-        }
-    }
-    
+
     private func calculateTotalDebt() -> Double {
         // Implement your debt calculation logic
         // This is a placeholder - replace with actual debt calculation

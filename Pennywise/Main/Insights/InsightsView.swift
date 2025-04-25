@@ -228,31 +228,27 @@ struct InsightsView: View {
     // MARK: - Tab Selector
     
     private var tabSelectorView: some View {
-        HStack(spacing: 0) {
-            ForEach(0..<tabs.count, id: \.self) { index in
-                Button(action: {
-                    withAnimation {
-                        selectedTab = index
-                    }
-                }) {
-                    Text(tabs[index])
-                        .font(.subheadline)
-                        .fontWeight(selectedTab == index ? .semibold : .regular)
-                        .foregroundColor(selectedTab == index ? .white : AppTheme.textColor.opacity(0.6))
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity)
-                        .background(
-                            selectedTab == index ?
-                            AppTheme.primaryGreen :
-                            AppTheme.cardBackground
-                        )
-                        .cornerRadius(12)
-                }
+        VStack(spacing: 0) {
+            Picker("", selection: $selectedTab) {
+                Text("Overview").tag(0)
+                Text("Spending").tag(1)
+                Text("Income").tag(2)
+                Text("Categories").tag(3)
             }
+            .pickerStyle(SegmentedPickerStyle())
+            // Apply specific theme colors to match the timeframe selector exactly
+            .onAppear {
+                UISegmentedControl.appearance().selectedSegmentTintColor = UIColor(AppTheme.primaryGreen)
+                UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
+                UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor(AppTheme.textColor.opacity(0.6))], for: .normal)
+                UISegmentedControl.appearance().backgroundColor = UIColor(AppTheme.cardBackground)
+            }
+            .padding(4)
+            .background(AppTheme.cardBackground)
+            .cornerRadius(8)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-        .background(Color.clear)
     }
     
     // For the matched geometry effect
@@ -345,7 +341,7 @@ struct InsightsView: View {
                 .padding(.horizontal)
             
             // Category breakdown card - now with actual pie chart
-            enhancedCategoryBreakdownCard
+            categoryBreakdownCard
                 .padding(.horizontal)
             
             // Recent transactions list
@@ -730,75 +726,28 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
-    // Enhanced category breakdown card with actual pie chart
-    private var enhancedCategoryBreakdownCard: some View {
+    private var categoryBreakdownCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Spending by Category")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
-            if !categoryBreakdown.isEmpty {
-                VStack(spacing: 16) {
-                    // Actual Pie Chart
-                    CategoryPieChartView(
-                        dataPoints: pieChartData,
-                        totalAmount: totalSpending,
-                        selectedIndex: $selectedCategoryIndex
-                    )
-                    .frame(height: 250)
-                    .padding(.vertical)
-                    
-                    // Category Legend
-                    VStack(spacing: 12) {
-                        ForEach(pieChartData.indices, id: \.self) { index in
-                            let dataPoint = pieChartData[index]
-                            HStack {
-                                Circle()
-                                    .fill(dataPoint.color)
-                                    .frame(width: 12, height: 12)
-                                
-                                Text(dataPoint.category)
-                                    .font(.subheadline)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Spacer()
-                                
-                                Text("$\(dataPoint.amount, specifier: "%.0f")")
-                                    .font(.subheadline)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Text("(\(Int(dataPoint.amount / totalSpending * 100))%)")
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            }
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 8)
-                            .background(selectedCategoryIndex == index ? dataPoint.color.opacity(0.1) : Color.clear)
-                            .cornerRadius(8)
-                            .onTapGesture {
-                                withAnimation {
-                                    if selectedCategoryIndex == index {
-                                        selectedCategoryIndex = nil
-                                    } else {
-                                        selectedCategoryIndex = index
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding()
-                .background(AppTheme.cardBackground)
-                .cornerRadius(12)
-            } else {
+            if categoryBreakdown.isEmpty {
                 Text("No category data for this period")
                     .font(.subheadline)
                     .foregroundColor(AppTheme.textColor.opacity(0.7))
                     .frame(height: 200)
                     .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+            } else {
+                // Convert category breakdown data to the format needed for PieChartView
+                let chartData = categoryBreakdown.map { (name, amount) in
+                    return (name, amount)
+                }
+                
+                // Use the new Swift Charts-based PieChartView
+                PieChartView(data: chartData)
+                                .frame(height: 300)
+                                .padding(.vertical, 8)
             }
         }
         .padding()
