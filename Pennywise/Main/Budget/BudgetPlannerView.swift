@@ -12,13 +12,16 @@ struct BudgetPlannerView: View {
     @State private var monthlyIncome: Double = 0
     @State private var isRefreshing: Bool = false
     @State private var animateCards: Bool = false
-    @State private var isLoading: Bool = true
+    @State private var isLoading: Bool = false // Changed from true to false for initial state
     @State private var showingCategoryDetail: Bool = false
     @State private var selectedCategory: BudgetCategory? = nil
     @State private var categorySpending: [String: Double] = [:]
     @State private var errorMessage: String? = nil
     @State private var showSuccessMessage = false
     @State private var successMessage = ""
+    
+    // New state variables for caching and optimization
+    @State private var hasLoaded: Bool = false
     
     // Budget metrics
     var totalBudget: Double {
@@ -121,8 +124,11 @@ struct BudgetPlannerView: View {
             }
         }
         .onAppear {
-            isLoading = true
-            initializeData()
+            // Only initialize data if we haven't already loaded it
+            if !hasLoaded {
+                isLoading = true
+                initializeData()
+            }
         }
         .alert(isPresented: $showSuccessMessage) {
             Alert(
@@ -335,7 +341,8 @@ struct BudgetPlannerView: View {
                             .foregroundColor(AppTheme.textColor.opacity(0.7))
                         
                         Text("$\(Int(totalSpentThisMonth))")
-                            .font(.headline)
+                            .font(.title3)
+                            .fontWeight(.bold)
                             .foregroundColor(AppTheme.accentBlue)
                     }
                     
@@ -349,7 +356,8 @@ struct BudgetPlannerView: View {
                             .foregroundColor(AppTheme.textColor.opacity(0.7))
                         
                         Text("$\(Int(totalBudget))")
-                            .font(.headline)
+                            .font(.title3)
+                            .fontWeight(.bold)
                             .foregroundColor(AppTheme.textColor)
                     }
                     
@@ -437,7 +445,7 @@ struct BudgetPlannerView: View {
                     
                     // Legend
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(categories.prefix(5), id: \.id) { category in
+                        ForEach(categories.prefix(5), id: \.name) { category in
                             HStack(spacing: 8) {
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(category.color)
@@ -538,7 +546,7 @@ struct BudgetPlannerView: View {
                 // Empty state is already shown in budgetAllocationCard
                 EmptyView()
             } else {
-                ForEach(Array(categories.enumerated()), id: \.element.id) { index, category in
+                ForEach(Array(categories.enumerated()), id: \.element.name) { index, category in
                     BudgetCategoryRow(
                         category: category,
                         spent: calculateSpentForCategory(category),
@@ -601,17 +609,13 @@ struct BudgetPlannerView: View {
         
         // Calculate spending for each category
         calculateCategorySpending()
-        
-        // Turn off loading state
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            isLoading = false
-        }
     }
     
     // Load monthly income
     private func loadMonthlyIncome() {
         guard let userId = Auth.auth().currentUser?.uid else {
             errorMessage = "User not logged in"
+            isLoading = false
             return
         }
         
@@ -619,14 +623,13 @@ struct BudgetPlannerView: View {
         db.collection("users").document(userId).getDocument { snapshot, error in
             if let error = error {
                 errorMessage = "Error loading income: \(error.localizedDescription)"
+                isLoading = false
                 return
             }
             
             if let document = snapshot, document.exists {
                 if let income = document.data()?["monthlyIncome"] as? Double {
-                    DispatchQueue.main.async {
-                        self.monthlyIncome = income
-                    }
+                    self.monthlyIncome = income
                 } else {
                     // Fetch from Plaid transactions as a fallback
                     self.calculateMonthlyIncomeFromTransactions()
@@ -656,13 +659,11 @@ struct BudgetPlannerView: View {
         // Sum absolute values of income transactions
         let calculatedIncome = abs(incomeTransactions.reduce(0) { $0 + $1.amount })
         
-        DispatchQueue.main.async {
-            if calculatedIncome > 0 {
-                self.monthlyIncome = calculatedIncome
-            } else {
-                // Set default value for demo purposes
-                self.monthlyIncome = 5000
-            }
+        if calculatedIncome > 0 {
+            monthlyIncome = calculatedIncome
+        } else {
+            // Set default value for demo purposes
+            monthlyIncome = 5000
         }
     }
 
@@ -670,6 +671,7 @@ struct BudgetPlannerView: View {
     private func loadBudgetCategories() {
         guard let userId = Auth.auth().currentUser?.uid else {
             errorMessage = "User not logged in"
+            isLoading = false
             return
         }
         
@@ -678,6 +680,7 @@ struct BudgetPlannerView: View {
         db.collection("users/\(userId)/budgetCategories").getDocuments { snapshot, error in
             if let error = error {
                 self.errorMessage = "Error loading categories: \(error.localizedDescription)"
+                self.isLoading = false
                 return
             }
             
@@ -701,9 +704,10 @@ struct BudgetPlannerView: View {
                     }
                 }
                 
-                DispatchQueue.main.async {
-                    self.categories = loadedCategories
-                }
+                self.categories = loadedCategories
+                // Mark that we've successfully loaded data
+                self.hasLoaded = true
+                self.isLoading = false
             }
         }
     }
@@ -753,8 +757,11 @@ struct BudgetPlannerView: View {
             return
         }
         
+        // Create a unique ID for this category
+        let categoryId = UUID().uuidString
+        
         let db = Firestore.firestore()
-        let categoryRef = db.collection("users/\(userId)/budgetCategories").document()
+        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
         
         // Convert Color to hex string
         let colorHex = category.color.hexString
@@ -774,15 +781,11 @@ struct BudgetPlannerView: View {
                 return
             }
             
-            // Add the category locally with the Firestore ID
-            let newCategory = BudgetCategory(
-                name: category.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                amount: category.amount,
-                icon: category.icon,
-                color: category.color
-            )
+            // Add the category locally with the Firestore ID as the ID
+            var newCategory = category
             
-            DispatchQueue.main.async {
+            // Update our local categories array
+            withAnimation {
                 self.categories.append(newCategory)
             }
         }
@@ -796,9 +799,11 @@ struct BudgetPlannerView: View {
         }
         
         // Find the category index
-        if let index = categories.firstIndex(where: { $0.id == category.id }) {
+        if let index = categories.firstIndex(where: { $0.name == category.name }) {
             let db = Firestore.firestore()
-            let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
+            // Use the category name to form a predictable ID
+            let categoryId = UUID().uuidString
+            let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
             
             // Convert Color to hex string
             let colorHex = category.color.hexString
@@ -815,10 +820,21 @@ struct BudgetPlannerView: View {
             categoryRef.updateData(data) { error in
                 if let error = error {
                     self.errorMessage = "Error updating category: \(error.localizedDescription)"
+                    // Try to set the data instead of update, in case the document doesn't exist
+                    categoryRef.setData(data) { error in
+                        if let error = error {
+                            self.errorMessage = "Error updating category: \(error.localizedDescription)"
+                            return
+                        }
+                        
+                        withAnimation {
+                            self.categories[index] = category
+                        }
+                    }
                     return
                 }
                 
-                DispatchQueue.main.async {
+                withAnimation {
                     self.categories[index] = category
                 }
             }
@@ -832,24 +848,43 @@ struct BudgetPlannerView: View {
             return
         }
         
-        let db = Firestore.firestore()
-        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
-        
-        categoryRef.updateData([
-            "amount": newAmount,
-            "updatedAt": FieldValue.serverTimestamp()
-        ]) { error in
-            if let error = error {
-                self.errorMessage = "Error updating category amount: \(error.localizedDescription)"
-                return
-            }
+        // Find the category by name
+        if let index = categories.firstIndex(where: { $0.name == category.name }) {
+            let db = Firestore.firestore()
+            // Use name to find the document
+            let query = db.collection("users/\(userId)/budgetCategories")
+                .whereField("name", isEqualTo: category.name)
             
-            // Update local category
-            if let index = self.categories.firstIndex(where: { $0.id == category.id }) {
-                DispatchQueue.main.async {
-                    var updatedCategory = self.categories[index]
-                    updatedCategory.amount = newAmount
-                    self.categories[index] = updatedCategory
+            // Get the document ID
+            query.getDocuments { (snapshot, error) in
+                if let error = error {
+                    self.errorMessage = "Error finding category: \(error.localizedDescription)"
+                    return
+                }
+                
+                if let document = snapshot?.documents.first {
+                    let categoryId = document.documentID
+                    let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
+                    
+                    categoryRef.updateData([
+                        "amount": newAmount,
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ]) { error in
+                        if let error = error {
+                            self.errorMessage = "Error updating category amount: \(error.localizedDescription)"
+                            return
+                        }
+                        
+                        // Update local category
+                        var updatedCategory = self.categories[index]
+                        updatedCategory.amount = newAmount
+                        
+                        withAnimation {
+                            self.categories[index] = updatedCategory
+                        }
+                    }
+                } else {
+                    self.errorMessage = "Category not found in Firestore"
                 }
             }
         }
@@ -862,18 +897,35 @@ struct BudgetPlannerView: View {
             return
         }
         
+        // Find the category by name
         let db = Firestore.firestore()
-        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
+        let query = db.collection("users/\(userId)/budgetCategories")
+            .whereField("name", isEqualTo: category.name)
         
-        categoryRef.delete { error in
+        // Get the document ID
+        query.getDocuments { (snapshot, error) in
             if let error = error {
-                self.errorMessage = "Error deleting category: \(error.localizedDescription)"
+                self.errorMessage = "Error finding category: \(error.localizedDescription)"
                 return
             }
             
-            // Remove from local array
-            DispatchQueue.main.async {
-                self.categories.removeAll { $0.id == category.id }
+            if let document = snapshot?.documents.first {
+                let categoryId = document.documentID
+                let categoryRef = db.collection("users/\(userId)/budgetCategories").document(categoryId)
+                
+                categoryRef.delete { error in
+                    if let error = error {
+                        self.errorMessage = "Error deleting category: \(error.localizedDescription)"
+                        return
+                    }
+                    
+                    // Remove from local array
+                    withAnimation {
+                        self.categories.removeAll { $0.name == category.name }
+                    }
+                }
+            } else {
+                self.errorMessage = "Category not found in Firestore"
             }
         }
     }
@@ -896,7 +948,7 @@ struct BudgetPlannerView: View {
         
         for category in categories {
             let spent = calculateSpentForCategory(category)
-            categoryData[category.id] = [
+            categoryData[category.name] = [
                 "budget": category.amount,
                 "spent": spent
             ]
@@ -1012,15 +1064,12 @@ struct BudgetPlannerView: View {
         // First, get all existing categories to avoid duplicates
         db.collection("users/\(userId)/budgetCategories").getDocuments { [self] snapshot, error in
             if let error = error {
-                DispatchQueue.main.async {
-                    self.errorMessage = "Error fetching categories: \(error.localizedDescription)"
-                    self.isLoading = false
-                }
+                self.errorMessage = "Error fetching categories: \(error.localizedDescription)"
+                self.isLoading = false
                 return
             }
             
             // Dictionary to track existing categories by name
-            var existingCategoriesById: [String: BudgetCategory] = [:]
             var existingCategoriesByName: [String: BudgetCategory] = [:]
             
             if let documents = snapshot?.documents {
@@ -1037,7 +1086,6 @@ struct BudgetPlannerView: View {
                             color: Color(hex: colorHex)
                         )
                         
-                        existingCategoriesById[document.documentID] = category
                         existingCategoriesByName[name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)] = category
                     }
                 }
@@ -1057,21 +1105,38 @@ struct BudgetPlannerView: View {
                 
                 // Check if this category already exists (by normalized name)
                 if let existingCategory = existingCategoriesByName[categoryNameLowercased] {
-                    // Update existing category with new amount but keep other properties
-                    let categoryRef = db.collection("users/\(userId)/budgetCategories").document(existingCategory.id)
-                    
-                    batch.updateData([
-                        "amount": budgetAmount,
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ], forDocument: categoryRef)
-                    
-                    // Update local copy with new amount
-                    var updatedCategory = existingCategory
-                    updatedCategory.amount = budgetAmount
-                    categoriesToUpdate.append(updatedCategory)
+                    // Find the document ID for this category
+                    db.collection("users/\(userId)/budgetCategories")
+                        .whereField("name", isEqualTo: existingCategory.name)
+                        .getDocuments { (snapshot, error) in
+                            if let document = snapshot?.documents.first {
+                                let categoryRef = db.collection("users/\(userId)/budgetCategories").document(document.documentID)
+                                
+                                categoryRef.updateData([
+                                    "amount": budgetAmount,
+                                    "updatedAt": FieldValue.serverTimestamp()
+                                ]) { error in
+                                    if let error = error {
+                                        self.errorMessage = "Error updating category: \(error.localizedDescription)"
+                                        return
+                                    }
+                                    
+                                    // Update local copy with new amount
+                                    if let index = self.categories.firstIndex(where: { $0.name == existingCategory.name }) {
+                                        var updatedCategory = self.categories[index]
+                                        updatedCategory.amount = budgetAmount
+                                        
+                                        withAnimation {
+                                            self.categories[index] = updatedCategory
+                                        }
+                                    }
+                                }
+                            }
+                        }
                 } else {
                     // Create new category
-                    let newCategoryRef = db.collection("users/\(userId)/budgetCategories").document()
+                    let newCategoryId = UUID().uuidString
+                    let newCategoryRef = db.collection("users/\(userId)/budgetCategories").document(newCategoryId)
                     
                     let newCategoryData: [String: Any] = [
                         "name": categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1082,51 +1147,35 @@ struct BudgetPlannerView: View {
                         "updatedAt": FieldValue.serverTimestamp()
                     ]
                     
-                    batch.setData(newCategoryData, forDocument: newCategoryRef)
-                    
-                    // Create local copy for immediate UI update
-                    let newCategory = BudgetCategory(
-                        name: categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
-                        amount: budgetAmount,
-                        icon: icon,
-                        color: color
-                    )
-                    
-                    newCategoriesToAdd.append(newCategory)
+                    newCategoryRef.setData(newCategoryData) { error in
+                        if let error = error {
+                            self.errorMessage = "Error adding category: \(error.localizedDescription)"
+                            return
+                        }
+                        
+                        // Create local copy for immediate UI update
+                        let newCategory = BudgetCategory(
+                            name: categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
+                            amount: budgetAmount,
+                            icon: icon,
+                            color: color
+                        )
+                        
+                        withAnimation {
+                            self.categories.append(newCategory)
+                        }
+                    }
                 }
             }
             
-            // Commit all the changes
-            batch.commit { error in
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    
-                    if let error = error {
-                        self.errorMessage = "Error updating budget: \(error.localizedDescription)"
-                        return
-                    }
-                    
-                    // Update our local array
-                    
-                    // First update existing categories
-                    for updatedCategory in categoriesToUpdate {
-                        if let index = self.categories.firstIndex(where: { $0.id == updatedCategory.id }) {
-                            self.categories[index] = updatedCategory
-                        }
-                    }
-                    
-                    // Then add new categories
-                    self.categories.append(contentsOf: newCategoriesToAdd)
-                    
-                    // Show success message
-                    self.successMessage = "Budget has been optimized with the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings & debt repayment."
-                    self.showSuccessMessage = true
-                    
-                    // Update budget usage
-                    self.calculateCategorySpending()
-                    self.updateBudgetUsageInFirebase()
-                }
-            }
+            // Show success message and finish loading
+            self.isLoading = false
+            self.successMessage = "Budget has been optimized with the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings & debt repayment."
+            self.showSuccessMessage = true
+            
+            // Update budget usage
+            self.calculateCategorySpending()
+            self.updateBudgetUsageInFirebase()
         }
     }
 }

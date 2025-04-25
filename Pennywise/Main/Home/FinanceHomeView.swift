@@ -516,8 +516,18 @@ struct FinanceHomeView: View {
             pending: false
         )
         
+        // First add to local state
         withAnimation(.spring()) {
             plaidManager.transactions.insert(newTransaction, at: 0)
+        }
+        
+        // Then sync with Firestore
+        plaidManager.addTransaction(newTransaction) { success in
+            if success {
+                print("Transaction successfully saved to Firestore")
+            } else {
+                print("Failed to save transaction to Firestore")
+            }
         }
     }
 }
@@ -693,64 +703,6 @@ struct TransactionRow: View {
         } else {
             return "dollarsign.circle"
         }
-    }
-}
-
-// Currency card with tap/press effect instead of hover
-struct CurrencyCard: View {
-    let currency: Currency
-    @State private var isPressed: Bool = false
-    
-    var body: some View {
-        ZStack {
-            // Card background with press animation
-            RoundedRectangle(cornerRadius: 20)
-                .fill(AppTheme.cardBackground)
-                .frame(width: 100, height: 110)
-                .shadow(color: Color.black.opacity(isPressed ? 0.15 : 0.05), radius: isPressed ? 12 : 8, x: 0, y: isPressed ? 6 : 4)
-                .scaleEffect(isPressed ? 1.03 : 1.0)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(AppTheme.cardStroke, lineWidth: 1)
-                )
-                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
-            
-            VStack(alignment: .leading, spacing: 10) {
-                // Symbol with dynamic color
-                Text(currency.symbol)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(currency.code == "EUR" ? AppTheme.primaryGreen : AppTheme.accentBlue)
-                    .padding(8)
-                    .background(
-                        Circle()
-                            .fill(currency.code == "EUR" ? AppTheme.primaryGreen.opacity(0.15) : AppTheme.accentBlue.opacity(0.15))
-                    )
-                
-                Text(currency.name)
-                    .font(.caption)
-                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    .lineLimit(1)
-                
-                Text("\(String(format: "%.2f", currency.rate))")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(AppTheme.textColor)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {} // Empty tap gesture to capture taps
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    isPressed = true
-                }
-                .onEnded { _ in
-                    isPressed = false
-                }
-        )
     }
 }
 

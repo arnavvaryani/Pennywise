@@ -9,6 +9,7 @@ struct SettingsView: View {
     // User preferences
     @AppStorage("biometricAuthEnabled") private var biometricAuthEnabled = true
     @AppStorage("requireBiometricsOnOpen") private var requireBiometricsOnOpen = true
+    @AppStorage("requireBiometricsForTransactions") private var requireBiometricsForTransactions = false
     
     // Notifications
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
@@ -25,7 +26,6 @@ struct SettingsView: View {
     @State private var showingAboutSheet = false
     @State private var showingBiometricSetupError = false
     @State private var biometricErrorMessage = ""
-    @State private var showingDeleteAccountAlert = false
     @State private var showingExportDataSheet = false
     @State private var showingReportBugSheet = false
     @State private var showingEditProfileSheet = false
@@ -83,14 +83,6 @@ struct SettingsView: View {
         } message: {
             Text("Are you sure you want to sign out?")
         }
-        .alert("Delete Account", isPresented: $showingDeleteAccountAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                // Handle account deletion
-            }
-        } message: {
-            Text("This will permanently delete your account and all associated data. This action cannot be undone.")
-        }
         .alert("Biometric Authentication Error", isPresented: $showingBiometricSetupError) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -128,9 +120,23 @@ struct SettingsView: View {
                         .fill(AppTheme.accentPurple.opacity(0.3))
                         .frame(width: 75, height: 75)
                     
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(AppTheme.textColor)
+                    if let photoURL = authService.user?.photoURL, let url = URL(string: photoURL.absoluteString) {
+                        AsyncImage(url: url) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 75, height: 75)
+                                .clipShape(Circle())
+                        } placeholder: {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(AppTheme.textColor)
+                        }
+                    } else {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(AppTheme.textColor)
+                    }
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -216,9 +222,8 @@ struct SettingsView: View {
                 Divider()
                     .background(AppTheme.textColor.opacity(0.1))
                 
-                Button(action: {
-                    showingDeleteAccountAlert = true
-                }) {
+                // NavigationLink for Delete Account
+                NavigationLink(destination: DeleteAccountView()) {
                     HStack {
                         Image(systemName: "person.crop.circle.badge.minus")
                             .font(.system(size: 22))
@@ -229,6 +234,10 @@ struct SettingsView: View {
                             .foregroundColor(AppTheme.expenseColor)
                         
                         Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(AppTheme.textColor.opacity(0.5))
+                            .font(.system(size: 14))
                     }
                     .padding(.vertical, 12)
                 }
@@ -250,9 +259,10 @@ struct SettingsView: View {
                         icon: availableBiometrics == .faceID ? "faceid" : "touchid"
                     ) {
                         checkAndEnableBiometrics(isEnabled: biometricAuthEnabled)
-                        // If biometrics are enabled, also enable on app launch
-                        if biometricAuthEnabled {
-                            requireBiometricsOnOpen = true
+                        // If biometrics are disabled, also disable dependent options
+                        if !biometricAuthEnabled {
+                            requireBiometricsOnOpen = false
+                            requireBiometricsForTransactions = false
                         }
                     }
                     
@@ -265,6 +275,21 @@ struct SettingsView: View {
                             subtitle: "Verify identity each time you open the app",
                             isOn: $requireBiometricsOnOpen,
                             icon: "app.fill"
+                        ) {
+                            // Reset the biometric check to force authentication on next app launch
+                            if requireBiometricsOnOpen {
+                                UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                            }
+                        }
+                        
+                        Divider()
+                            .background(AppTheme.textColor.opacity(0.1))
+                        
+                        settingsToggle(
+                            title: "Require for Transactions",
+                            subtitle: "Verify identity for transactions over $50",
+                            isOn: $requireBiometricsForTransactions,
+                            icon: "dollarsign.circle.fill"
                         )
                     }
                 } else {
@@ -766,6 +791,7 @@ struct SettingsView: View {
     private func exportOptionButton(title: String, icon: String) -> some View {
         Button(action: {
             // Export data action
+            exportData(type: title)
         }) {
             HStack(spacing: 15) {
                 Image(systemName: icon)
@@ -823,6 +849,7 @@ struct SettingsView: View {
                 biometricErrorMessage = "Biometric authentication is not available: \(error.localizedDescription)"
                 biometricAuthEnabled = false
                 requireBiometricsOnOpen = false
+                requireBiometricsForTransactions = false
             }
         }
     }
@@ -850,5 +877,50 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+    
+    // Export data to CSV function
+    private func exportData(type: String) {
+        // In a real implementation, this would generate and export CSV files
+        // Here we're just simulating the export
+        
+        // Create a temporary activity indicator
+        let activityIndicator = UIActivityIndicatorView(style: .large)
+//        activityIndicator.center = UIScreen.main.bounds.center
+        activityIndicator.startAnimating()
+        
+        if let window = UIApplication.shared.windows.first {
+            window.addSubview(activityIndicator)
+        }
+        
+        // Simulate export process
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            // Remove activity indicator
+            activityIndicator.removeFromSuperview()
+            
+            // Simulate successful export
+            let alertController = UIAlertController(
+                title: "Export Complete",
+                message: "\(type) data has been exported successfully.",
+                preferredStyle: .alert
+            )
+            
+            alertController.addAction(UIAlertAction(title: "OK", style: .default))
+            
+            if let window = UIApplication.shared.windows.first,
+               let rootViewController = window.rootViewController {
+                rootViewController.present(alertController, animated: true)
+            }
+        }
+    }
+}
+
+struct SettingsView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationView {
+            SettingsView()
+                .environmentObject(PlaidManager.shared)
+        }
+        .preferredColorScheme(.dark)
     }
 }

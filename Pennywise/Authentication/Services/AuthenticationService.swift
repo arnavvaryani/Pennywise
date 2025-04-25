@@ -55,10 +55,10 @@ class AuthenticationService: ObservableObject {
                 self?.user = user
                 self?.isAuthenticated = user != nil
                 
-                // If user just authenticated and biometric auth is required on open,
-                // we can set the flag that the user has passed this authentication
-                if user != nil && self?.requireBiometricsOnOpen == true {
-                    UserDefaults.standard.set(true, forKey: "hasPassedBiometricCheck")
+                // If user just authenticated and biometric auth is enabled/required on open,
+                // we need to make sure they'll be prompted for biometrics
+                if user != nil && self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
+                    UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
                 }
             }
         }
@@ -164,7 +164,7 @@ class AuthenticationService: ObservableObject {
     }
     
     func resetBiometricCheck() {
-        if requireBiometricsOnOpen {
+        if requireBiometricsOnOpen && biometricAuthEnabled {
             UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
         }
     }
@@ -194,6 +194,12 @@ class AuthenticationService: ObservableObject {
                 if let user = authResult?.user {
                     self?.user = user
                     self?.isAuthenticated = true
+                    
+                    // Reset biometric check on sign in to force authentication on app launch
+                    if self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
+                        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                    }
+                    
                     completion(.success(user))
                 } else {
                     let error = AuthError.userNotFound
@@ -224,6 +230,11 @@ class AuthenticationService: ObservableObject {
                     
                     // Create user profile in database
                     self?.createUserProfile(for: user)
+                    
+                    // Reset biometric check for new users
+                    if self?.biometricAuthEnabled == true && self?.requireBiometricsOnOpen == true {
+                        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                    }
                     
                     completion(.success(user))
                 } else {
@@ -292,6 +303,11 @@ class AuthenticationService: ObservableObject {
                         
                         // Create user profile in database if this is their first login
                         self?.createUserProfile(for: firebaseUser)
+                        
+                        // Reset biometric check on sign in
+                        if self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
+                            UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                        }
                         
                         completion(.success(firebaseUser))
                     } else {
@@ -367,6 +383,11 @@ class AuthenticationService: ObservableObject {
         
         if let name = name {
             updateData["name"] = name
+            
+            // Also update display name in Firebase Auth
+            let changeRequest = user.createProfileChangeRequest()
+            changeRequest.displayName = name
+            changeRequest.commitChanges { _ in }
         }
         
         if let monthlyIncome = monthlyIncome {

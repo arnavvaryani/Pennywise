@@ -139,23 +139,20 @@ struct TabBar: View {
     
     // Tab bar background with blur
     private var tabBarBackground: some View {
-        ZStack {
-            // Blur effect
-            BlurView(style: .systemUltraThinMaterialDark)
-                .opacity(0.95)
-            
-            // Additional background color for better visibility
-            AppTheme.backgroundColor.opacity(0.8)
-            
-            // Top border line
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(AppTheme.accentPurple.opacity(0.2))
-                .position(x: UIScreen.main.bounds.width / 2, y: 0.5)
-        }
-        .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: -5)
-        .edgesIgnoringSafeArea(.all)
-    }
+           ZStack {
+               // Use the same color as the navigation bar
+               AppTheme.backgroundPrimary
+                   .opacity(1.0)
+               
+               // Top border line
+               Rectangle()
+                   .frame(height: 1)
+                   .foregroundColor(AppTheme.accentPurple.opacity(0.2))
+                   .position(x: UIScreen.main.bounds.width / 2, y: 0.5)
+           }
+           .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: -5)
+           .edgesIgnoringSafeArea(.all)
+       }
 }
 
 

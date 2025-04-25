@@ -7,8 +7,6 @@
 
 import SwiftUI
 
-/// Unified theme struct for the entire app, consolidating all theme elements
-/// with support for accessibility and light/dark mode
 struct AppTheme {
     // MARK: - Colors
     

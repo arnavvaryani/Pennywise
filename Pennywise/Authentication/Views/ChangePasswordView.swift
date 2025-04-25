@@ -314,98 +314,84 @@ struct ChangePasswordView: View {
         // Start loading state
         isLoading = true
         
-        // Use the AuthenticationService to change the password
-        authService.changePassword(currentPassword: currentPassword, newPassword: newPassword) { result in
-            DispatchQueue.main.async {
-                isLoading = false
-                
-                switch result {
-                case .success:
-                    // Clear password fields
-                    currentPassword = ""
-                    newPassword = ""
-                    confirmPassword = ""
-                    
-                    // Show success message
-                    successMessage = "Your password has been updated successfully."
-                    
-                    // Also show alert for additional confirmation
-                    alertTitle = "Password Changed"
-                    alertMessage = "Your password has been changed successfully. Please use your new password for future logins."
-                    showAlert = true
-                    
-                case .failure(let error):
-                    handleAuthError(error)
-                }
-            }
-        }
-    }
-    
-    private func reauthenticateUser(completion: @escaping (Bool, Error?) -> Void) {
+        // Get current user
         guard let user = Auth.auth().currentUser, let email = user.email else {
-            completion(false, nil)
-            return
-        }
-        
-        // Create credential
-        let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
-        
-        // Reauthenticate user
-        user.reauthenticate(with: credential) { _, error in
-            if let error = error {
-                completion(false, error)
-            } else {
-                completion(true, nil)
-            }
-        }
-    }
-    
-    private func updateUserPassword() {
-        guard let user = Auth.auth().currentUser else {
             isLoading = false
             errorMessage = "User not signed in."
             return
         }
         
-        // Update password
-        user.updatePassword(to: newPassword) { error in
-            DispatchQueue.main.async {
-                isLoading = false
-                
-                if let error = error {
-                    handleAuthError(error)
-                } else {
-                    // Clear password fields
-                    currentPassword = ""
-                    newPassword = ""
-                    confirmPassword = ""
+        // Create credential with current password
+        let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
+        
+        // Reauthenticate user first
+        user.reauthenticate(with: credential) { _, error in
+            
+            if let error = error {
+                DispatchQueue.main.async {
+                    self.isLoading = false
                     
-                    // Show success message
-                    successMessage = "Your password has been updated successfully."
+                    // Handle specific Firebase Auth errors
+                    let authError = error as NSError
+                    if authError.domain == AuthErrorDomain {
+                        switch authError.code {
+                        case AuthErrorCode.wrongPassword.rawValue:
+                            self.errorMessage = "Current password is incorrect."
+                        case AuthErrorCode.tooManyRequests.rawValue:
+                            self.errorMessage = "Too many attempts. Please try again later."
+                        case AuthErrorCode.networkError.rawValue:
+                            self.errorMessage = "Network error. Please check your connection."
+                        default:
+                            self.errorMessage = "Authentication error: \(error.localizedDescription)"
+                        }
+                    } else {
+                        self.errorMessage = "Error: \(error.localizedDescription)"
+                    }
+                }
+                return
+            }
+            
+            // Now update the password
+            user.updatePassword(to: self.newPassword) { error in
+                DispatchQueue.main.async {
+                    self.isLoading = false
                     
-                    // Also show alert for additional confirmation
-                    alertTitle = "Password Changed"
-                    alertMessage = "Your password has been changed successfully. Please use your new password for future logins."
-                    showAlert = true
+                    if let error = error {
+                        // Handle specific Firebase Auth errors for password update
+                        let authError = error as NSError
+                        if authError.domain == AuthErrorDomain {
+                            switch authError.code {
+                            case AuthErrorCode.weakPassword.rawValue:
+                                self.errorMessage = "The password is too weak."
+                            case AuthErrorCode.requiresRecentLogin.rawValue:
+                                self.errorMessage = "This operation requires recent authentication. Please log in again."
+                            default:
+                                self.errorMessage = "Failed to update password: \(error.localizedDescription)"
+                            }
+                        } else {
+                            self.errorMessage = "Error: \(error.localizedDescription)"
+                        }
+                    } else {
+                        // Password updated successfully
+                        
+                        // Clear password fields
+                        self.currentPassword = ""
+                        self.newPassword = ""
+                        self.confirmPassword = ""
+                        
+                        // Show success message
+                        self.successMessage = "Your password has been updated successfully."
+                        
+                        // Also show alert for additional confirmation
+                        self.alertTitle = "Password Changed"
+                        self.alertMessage = "Your password has been changed successfully. Please use your new password for future logins."
+                        self.showAlert = true
+                        
+                        // Reset biometric check since password has changed
+                        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                    }
                 }
             }
-        }
-    }
-    
-    private func handleAuthError(_ error: Error) {
-        if let authError = error as NSError? {
-            switch authError.code {
-            case AuthErrorCode.wrongPassword.rawValue:
-                errorMessage = "Current password is incorrect."
-            case AuthErrorCode.requiresRecentLogin.rawValue:
-                errorMessage = "This operation is sensitive and requires recent authentication. Please log in again before retrying."
-            case AuthErrorCode.networkError.rawValue:
-                errorMessage = "Network error. Please check your internet connection."
-            default:
-                errorMessage = "Error: \(authError.localizedDescription)"
-            }
-        } else {
-            errorMessage = "An error occurred: \(error.localizedDescription)"
         }
     }
 }

@@ -173,6 +173,11 @@ struct AppCoordinator: View {
             }
         }
         .onAppear {
+            // Always reset the biometric check when the app appears
+            if authService.isAuthenticated && authService.biometricAuthEnabled && authService.requireBiometricsOnOpen {
+                UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+            }
+            
             checkBiometricAuthRequirement()
             
             if !plaidManager.accounts.isEmpty {
@@ -214,16 +219,22 @@ struct AppCoordinator: View {
     }
     
     private func checkBiometricAuthRequirement() {
-        if !hasCheckedAuth && authService.isAuthenticated && authService.shouldRequireBiometricAuth() {
-
-            let biometricType = authService.getBiometricType()
-            if biometricType != .none {
-                showBiometricAuth = true
-            } else {
-                // If biometrics is not available, mark as passed
-                UserDefaults.standard.set(true, forKey: "hasPassedBiometricCheck")
+        // Check if user is authenticated and biometric auth is required
+        if authService.isAuthenticated && authService.requireBiometricsOnOpen && authService.biometricAuthEnabled {
+            // Always check if user has passed the biometric check in this session
+            let hasPassedBiometricCheck = UserDefaults.standard.bool(forKey: "hasPassedBiometricCheck")
+            
+            if !hasPassedBiometricCheck {
+                let biometricType = authService.getBiometricType()
+                if biometricType != .none {
+                    showBiometricAuth = true
+                } else {
+                    // If biometrics is not available, mark as passed
+                    UserDefaults.standard.set(true, forKey: "hasPassedBiometricCheck")
+                }
             }
         }
+        
         hasCheckedAuth = true
     }
 }
@@ -266,3 +277,5 @@ struct EnhancedAppCoordinator_Previews: PreviewProvider {
         AppCoordinator()
     }
 }
+
+

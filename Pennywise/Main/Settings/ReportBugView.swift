@@ -6,9 +6,13 @@
 //
 
 import SwiftUI
+import Firebase
+import FirebaseFirestore
 
 struct ReportBugView: View {
     @Binding var isPresented: Bool
+    @StateObject private var authService = AuthenticationService.shared
+    
     @State private var bugDescription = ""
     @State private var email = ""
     @State private var includeDeviceInfo = true
@@ -16,6 +20,8 @@ struct ReportBugView: View {
     @State private var bugCategory = "General"
     @State private var isSubmitting = false
     @State private var showSuccessAlert = false
+    @State private var errorMessage = ""
+    @State private var showError = false
     
     let categories = ["General", "Transaction Issues", "Budget Issues", "Account Issues", "UI/Display Issues", "Other"]
     
@@ -144,6 +150,21 @@ struct ReportBugView: View {
                                 .stroke(AppTheme.cardStroke, lineWidth: 1)
                         )
                         
+                        // Error message (if any)
+                        if !errorMessage.isEmpty {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .foregroundColor(AppTheme.expenseColor)
+                                
+                                Text(errorMessage)
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.expenseColor)
+                            }
+                            .padding()
+                            .background(AppTheme.expenseColor.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                        
                         // Submit button
                         Button(action: {
                             submitBugReport()
@@ -189,13 +210,101 @@ struct ReportBugView: View {
         }
     }
     
-    private func submitBugReport() {
-        isSubmitting = true
+    private func getDeviceInfo() -> [String: Any] {
+        let device = UIDevice.current
+        let screenSize = UIScreen.main.bounds.size
         
-        // Simulate network request
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            isSubmitting = false
-            showSuccessAlert = true
+        let deviceInfo: [String: Any] = [
+            "model": device.model,
+            "systemName": device.systemName,
+            "systemVersion": device.systemVersion,
+            "screenWidth": screenSize.width,
+            "screenHeight": screenSize.height,
+            "batteryLevel": device.batteryLevel >= 0 ? Int(device.batteryLevel * 100) : "Unknown",
+            "batteryState": getBatteryStateString(device.batteryState),
+            "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown",
+            "buildNumber": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
+        ]
+        
+        return deviceInfo
+    }
+    
+    private func getBatteryStateString(_ state: UIDevice.BatteryState) -> String {
+        switch state {
+        case .charging:
+            return "Charging"
+        case .full:
+            return "Full"
+        case .unplugged:
+            return "Unplugged"
+        case .unknown:
+            return "Unknown"
+        @unknown default:
+            return "Unknown"
         }
+    }
+    
+    private func submitBugReport() {
+        guard !bugDescription.isEmpty else { return }
+        
+        // Enable battery monitoring to get battery info
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        
+        isSubmitting = true
+        errorMessage = ""
+        
+        // Prepare bug report data
+        var bugReportData: [String: Any] = [
+            "description": bugDescription,
+            "category": bugCategory,
+            "timestamp": FieldValue.serverTimestamp()
+        ]
+        
+        // Add optional email if provided
+        if !email.isEmpty {
+            bugReportData["email"] = email
+        }
+        
+        // Add user ID if signed in
+        if let userId = authService.user?.uid {
+            bugReportData["userId"] = userId
+        }
+        
+        // Add device info if requested
+        if includeDeviceInfo {
+            bugReportData["deviceInfo"] = getDeviceInfo()
+        }
+        
+        // Add app logs if requested
+        if includeAppLogs {
+            // In a real app, you would collect and add actual app logs
+            bugReportData["appLogs"] = "App logs would be included here in production"
+        }
+        
+        // Use Firebase to save the bug report
+        let db = Firestore.firestore()
+        db.collection("bugReports").addDocument(data: bugReportData) { error in
+            // Disable battery monitoring when done
+            UIDevice.current.isBatteryMonitoringEnabled = false
+            
+            DispatchQueue.main.async {
+                isSubmitting = false
+                
+                if let error = error {
+                    errorMessage = "Failed to submit bug report: \(error.localizedDescription)"
+                    showError = true
+                } else {
+                    showSuccessAlert = true
+                }
+            }
+        }
+    }
+}
+
+// Helper struct to allow previews
+struct ReportBugView_Previews: PreviewProvider {
+    static var previews: some View {
+        ReportBugView(isPresented: .constant(true))
+            .environmentObject(AuthenticationService.shared)
     }
 }

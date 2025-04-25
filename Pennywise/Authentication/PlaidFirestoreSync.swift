@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import Firebase
+import FirebaseAuth
 
 /// Manages synchronization between Plaid API data and Firestore
 class PlaidFirestoreSync: ObservableObject {
@@ -176,26 +177,112 @@ class PlaidFirestoreSync: ObservableObject {
     }
     
     /// Syncs transaction data to Firestore
-    func syncTransactionsToFirestore(completion: ((Bool) -> Void)? = nil) {
-        // If no transactions, fetch them first
-        if plaidManager.transactions.isEmpty {
-            plaidManager.fetchTransactions { [weak self] success in
-                guard let self = self else {
-                    completion?(false)
-                    return
-                }
-                
+    /// Syncs transaction data to Firestore
+        func syncTransactionsToFirestore(completion: ((Bool) -> Void)? = nil) {
+            guard let userId = Auth.auth().currentUser?.uid else {
+                print("Error: User not logged in")
+                completion?(false)
+                return
+            }
+            
+            // Get all transactions from PlaidManager
+            let transactions = plaidManager.transactions
+            
+            if transactions.isEmpty {
+                print("No transactions to sync")
+                completion?(true)
+                return
+            }
+            
+            print("Syncing \(transactions.count) transactions to Firestore")
+            
+            // Create batches of transactions (max 500 operations per batch in Firestore)
+            let batchSize = 450 // Leaving room for other operations
+            let batches = stride(from: 0, to: transactions.count, by: batchSize).map {
+                Array(transactions[$0..<min($0 + batchSize, transactions.count)])
+            }
+            
+            // Process each batch
+            processBatches(batches, userId: userId, index: 0) { [weak self] success in
                 if success {
-                    self.firestoreManager.syncTransactions(self.plaidManager.transactions, completion: completion ?? { _ in })
+                    print("Successfully synced all transaction batches")
+                    
+                    // Update monthly summaries
+                    self?.firestoreManager.updateMonthlySummaries(from: transactions) { summariesSuccess in
+                        if summariesSuccess {
+                            print("Successfully updated monthly summaries")
+                        } else {
+                            print("Failed to update monthly summaries")
+                        }
+                        
+                        // Update budget categories
+                        self?.firestoreManager.updateBudgetUsage { budgetSuccess in
+                            print("Budget usage update: \(budgetSuccess)")
+                            completion?(true)
+                        }
+                    }
                 } else {
+                    print("Failed to sync all transaction batches")
                     completion?(false)
                 }
             }
-        } else {
-            // Use existing transactions
-            firestoreManager.syncTransactions(plaidManager.transactions, completion: completion ?? { _ in })
+        }
+    
+    /// Processes batches of transactions recursively
+    private func processBatches(_ batches: [[PlaidTransaction]], userId: String, index: Int, completion: @escaping (Bool) -> Void) {
+        // Base case: if we've processed all batches, we're done
+        if index >= batches.count {
+            completion(true)
+            return
+        }
+        
+        let currentBatch = batches[index]
+        print("Processing transaction batch \(index + 1)/\(batches.count) with \(currentBatch.count) transactions")
+        
+        // Create a new batch write
+        let batch = Firestore.firestore().batch()
+        
+        // Reference to the transactions collection
+        let transactionsRef = Firestore.firestore().collection("users").document(userId).collection("transactions")
+        
+        // Add each transaction to the batch
+        for transaction in currentBatch {
+            let docRef = transactionsRef.document(transaction.id)
+            
+            // Convert transaction to dictionary manually
+            let transactionData: [String: Any] = [
+                "id": transaction.id,
+                "accountId": transaction.accountId,
+                "name": transaction.name,
+                "amount": transaction.amount,
+                "date": transaction.date,
+                "category": transaction.category,
+                "merchantName": transaction.merchantName ?? "",
+                "pending": transaction.pending,
+                "lastUpdated": FieldValue.serverTimestamp()
+            ]
+            
+            // Add a set operation to the batch
+            batch.setData(transactionData, forDocument: docRef, merge: true)
+        }
+        
+        // Commit the batch
+        batch.commit { [weak self] error in
+            if let error = error {
+                print("Error writing transaction batch \(index): \(error.localizedDescription)")
+                completion(false)
+                return
+            }
+            
+            // Update progress if needed
+            let progressPerBatch = 0.4 / Float(batches.count)
+            self?.syncProgress = 0.3 + (Float(index + 1) * progressPerBatch)
+            
+            // Process the next batch
+            self?.processBatches(batches, userId: userId, index: index + 1, completion: completion)
         }
     }
+    
     
     /// Syncs budget data to Firestore
     func syncBudgetData(completion: ((Bool) -> Void)? = nil) {
