@@ -239,6 +239,7 @@ struct TransactionView: View {
                 .scrollDismissesKeyboard(.immediately)
             }
             .navigationTitle("New Transaction")
+            .navigationViewStyle(.stack)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

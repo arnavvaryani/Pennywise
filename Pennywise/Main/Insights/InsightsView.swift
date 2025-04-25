@@ -229,19 +229,62 @@ struct InsightsView: View {
     
     private var tabSelectorView: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $selectedTab) {
-                Text("Overview").tag(0)
-                Text("Spending").tag(1)
-                Text("Income").tag(2)
-                Text("Categories").tag(3)
-            }
-            .pickerStyle(SegmentedPickerStyle())
-            // Apply specific theme colors to match the timeframe selector exactly
-            .onAppear {
-                UISegmentedControl.appearance().selectedSegmentTintColor = UIColor(AppTheme.primaryGreen)
-                UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
-                UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor(AppTheme.textColor.opacity(0.6))], for: .normal)
-                UISegmentedControl.appearance().backgroundColor = UIColor(AppTheme.cardBackground)
+            HStack(spacing: 0) {
+                Button(action: {
+                    withAnimation {
+                        selectedTab = 0
+                    }
+                }) {
+                    Text("Overview")
+                        .font(.footnote)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(selectedTab == 0 ? AppTheme.primaryGreen : Color.clear)
+                        .foregroundColor(selectedTab == 0 ? .white : AppTheme.textColor.opacity(0.6))
+                        .cornerRadius(20)
+                }
+                
+                Button(action: {
+                    withAnimation {
+                        selectedTab = 1
+                    }
+                }) {
+                    Text("Spending")
+                        .font(.footnote)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(selectedTab == 1 ? AppTheme.primaryGreen : Color.clear)
+                        .foregroundColor(selectedTab == 1 ? .white : AppTheme.textColor.opacity(0.6))
+                        .cornerRadius(20)
+                }
+                
+                Button(action: {
+                    withAnimation {
+                        selectedTab = 2
+                    }
+                }) {
+                    Text("Income")
+                        .font(.footnote)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(selectedTab == 2 ? AppTheme.primaryGreen : Color.clear)
+                        .foregroundColor(selectedTab == 2 ? .white : AppTheme.textColor.opacity(0.6))
+                        .cornerRadius(20)
+                }
+                
+                Button(action: {
+                    withAnimation {
+                        selectedTab = 3
+                    }
+                }) {
+                    Text("Categories")
+                        .font(.footnote)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(selectedTab == 3 ? AppTheme.primaryGreen : Color.clear)
+                        .foregroundColor(selectedTab == 3 ? .white : AppTheme.textColor.opacity(0.6))
+                        .cornerRadius(20)
+                }
             }
             .padding(4)
             .background(AppTheme.cardBackground)
@@ -449,7 +492,7 @@ struct InsightsView: View {
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(netCashflow >= 0 ? AppTheme.primaryGreen : AppTheme.expenseColor)
-                }
+                 }
                 .frame(maxWidth: .infinity)
             }
             .padding()
@@ -1223,5 +1266,5 @@ struct CategoryPieChartView: View {
         return .degrees((precedingSum + currentAmount) / totalAmount * 360 - 90)
     }
 }
-
+ 
 

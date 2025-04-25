@@ -17,6 +17,8 @@ struct BudgetPlannerView: View {
     @State private var selectedCategory: BudgetCategory? = nil
     @State private var categorySpending: [String: Double] = [:]
     @State private var errorMessage: String? = nil
+    @State private var showSuccessMessage = false
+    @State private var successMessage = ""
     
     // Budget metrics
     var totalBudget: Double {
@@ -122,6 +124,13 @@ struct BudgetPlannerView: View {
             isLoading = true
             initializeData()
         }
+        .alert(isPresented: $showSuccessMessage) {
+            Alert(
+                title: Text("Success"),
+                message: Text(successMessage),
+                dismissButton: .default(Text("OK"))
+            )
+        }
         .alert(item: Binding<AlertData?>(
             get: {
                 errorMessage.map { AlertData(id: UUID().uuidString, message: $0) }
@@ -150,11 +159,13 @@ struct BudgetPlannerView: View {
                     .scaleEffect(animateCards ? 1.0 : 0.95)
                     .opacity(animateCards ? 1.0 : 0)
                 
-                // Budget progress card
-                budgetProgressCard
-                    .padding(.horizontal)
-                    .scaleEffect(animateCards ? 1.0 : 0.95)
-                    .opacity(animateCards ? 1.0 : 0)
+                // Budget progress card only shown when we have categories
+                if !categories.isEmpty {
+                    budgetProgressCard
+                        .padding(.horizontal)
+                        .scaleEffect(animateCards ? 1.0 : 0.95)
+                        .opacity(animateCards ? 1.0 : 0)
+                }
                 
                 // Budget allocation visualization
                 if !categories.isEmpty {
@@ -162,15 +173,8 @@ struct BudgetPlannerView: View {
                         .padding(.horizontal)
                         .scaleEffect(animateCards ? 1.0 : 0.95)
                         .opacity(animateCards ? 1.0 : 0)
-                } else {
-                    noBudgetCategoriesView
-                        .padding(.horizontal)
-                        .scaleEffect(animateCards ? 1.0 : 0.95)
-                        .opacity(animateCards ? 1.0 : 0)
-                }
-                
-                // Category section
-                VStack(spacing: 16) {
+                        
+                    // Category section header - only shown when we have categories
                     HStack {
                         Text("Budget Categories")
                             .font(AppTheme.headlineFont())
@@ -200,6 +204,12 @@ struct BudgetPlannerView: View {
                     
                     // Categories list
                     categoriesListView(categories: categories)
+                } else {
+                    // Single empty state view when no categories exist
+                    noBudgetCategoriesView
+                        .padding(.horizontal)
+                        .scaleEffect(animateCards ? 1.0 : 0.95)
+                        .opacity(animateCards ? 1.0 : 0)
                 }
                 
                 // Bottom padding
@@ -278,10 +288,8 @@ struct BudgetPlannerView: View {
         )
     }
     
-    // Budget progress card
     private var budgetProgressCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Title
             Text("Budget Progress")
                 .font(AppTheme.headlineFont())
                 .foregroundColor(AppTheme.textColor)
@@ -293,7 +301,7 @@ struct BudgetPlannerView: View {
                     // Background circle
                     Circle()
                         .stroke(AppTheme.cardStroke, lineWidth: 12)
-                        .frame(width: 120, height: 120)
+                        .frame(width: 150, height: 150)
                     
                     // Progress
                     Circle()
@@ -302,24 +310,24 @@ struct BudgetPlannerView: View {
                             budgetStatusColor(for: budgetStatus),
                             style: StrokeStyle(lineWidth: 12, lineCap: .round)
                         )
-                        .frame(width: 120, height: 120)
+                        .frame(width: 150, height: 150)
                         .rotationEffect(.degrees(-90))
                     
                     // Center text
                     VStack(spacing: 2) {
                         Text("\(Int(budgetProgressPercentage * 100))%")
-                            .font(.title3)
+                            .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(AppTheme.textColor)
                         
                         Text("Spent")
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundColor(AppTheme.textColor.opacity(0.7))
                     }
                 }
                 
                 // Spending details
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 15) {
                     // Spent
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Spent This Month")
@@ -331,6 +339,9 @@ struct BudgetPlannerView: View {
                             .foregroundColor(AppTheme.accentBlue)
                     }
                     
+                    Divider()
+                        .background(AppTheme.cardStroke)
+                    
                     // Budget
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Total Budget")
@@ -341,6 +352,9 @@ struct BudgetPlannerView: View {
                             .font(.headline)
                             .foregroundColor(AppTheme.textColor)
                     }
+                    
+                    Divider()
+                        .background(AppTheme.cardStroke)
                     
                     // Status
                     VStack(alignment: .leading, spacing: 4) {
@@ -361,14 +375,18 @@ struct BudgetPlannerView: View {
                 }
             }
             .padding()
-            .background(AppTheme.cardBackground.opacity(0.5))
-            .cornerRadius(12)
+            .background(AppTheme.cardBackground)
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(AppTheme.cardStroke, lineWidth: 1)
+            )
         }
         .padding()
         .background(AppTheme.cardBackground)
-        .cornerRadius(16)
+        .cornerRadius(20)
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 20)
                 .stroke(AppTheme.cardStroke, lineWidth: 1)
         )
     }
@@ -517,8 +535,8 @@ struct BudgetPlannerView: View {
     private func categoriesListView(categories: [BudgetCategory]) -> some View {
         VStack(spacing: 16) {
             if categories.isEmpty {
-                noBudgetCategoriesView
-                    .padding(.horizontal)
+                // Empty state is already shown in budgetAllocationCard
+                EmptyView()
             } else {
                 ForEach(Array(categories.enumerated()), id: \.element.id) { index, category in
                     BudgetCategoryRow(
@@ -585,7 +603,9 @@ struct BudgetPlannerView: View {
         calculateCategorySpending()
         
         // Turn off loading state
-        isLoading = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            isLoading = false
+        }
     }
     
     // Load monthly income
@@ -605,13 +625,47 @@ struct BudgetPlannerView: View {
             if let document = snapshot, document.exists {
                 if let income = document.data()?["monthlyIncome"] as? Double {
                     DispatchQueue.main.async {
-                        monthlyIncome = income
+                        self.monthlyIncome = income
                     }
+                } else {
+                    // Fetch from Plaid transactions as a fallback
+                    self.calculateMonthlyIncomeFromTransactions()
                 }
+            } else {
+                // Fetch from Plaid transactions if no document exists
+                self.calculateMonthlyIncomeFromTransactions()
             }
         }
     }
     
+    private func calculateMonthlyIncomeFromTransactions() {
+        let calendar = Calendar.current
+        let now = Date()
+        let currentMonth = calendar.component(.month, from: now)
+        let currentYear = calendar.component(.year, from: now)
+        
+        // Filter for income transactions (negative amounts)
+        let incomeTransactions = plaidManager.transactions.filter { transaction in
+            let transactionMonth = calendar.component(.month, from: transaction.date)
+            let transactionYear = calendar.component(.year, from: transaction.date)
+            return transactionMonth == currentMonth &&
+            transactionYear == currentYear &&
+            transaction.amount < 0
+        }
+        
+        // Sum absolute values of income transactions
+        let calculatedIncome = abs(incomeTransactions.reduce(0) { $0 + $1.amount })
+        
+        DispatchQueue.main.async {
+            if calculatedIncome > 0 {
+                self.monthlyIncome = calculatedIncome
+            } else {
+                // Set default value for demo purposes
+                self.monthlyIncome = 5000
+            }
+        }
+    }
+
     // Load budget categories
     private func loadBudgetCategories() {
         guard let userId = Auth.auth().currentUser?.uid else {
@@ -620,7 +674,7 @@ struct BudgetPlannerView: View {
         }
         
         let db = Firestore.firestore()
-   
+        
         db.collection("users/\(userId)/budgetCategories").getDocuments { snapshot, error in
             if let error = error {
                 self.errorMessage = "Error loading categories: \(error.localizedDescription)"
@@ -649,7 +703,6 @@ struct BudgetPlannerView: View {
                 
                 DispatchQueue.main.async {
                     self.categories = loadedCategories
-                    self.isLoading = false
                 }
             }
         }
@@ -691,6 +744,15 @@ struct BudgetPlannerView: View {
             return
         }
         
+        // Check for duplicate category names
+        let categoryNameLowercased = category.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let existingNames = categories.map { $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+        
+        if existingNames.contains(categoryNameLowercased) {
+            errorMessage = "A category with this name already exists"
+            return
+        }
+        
         let db = Firestore.firestore()
         let categoryRef = db.collection("users/\(userId)/budgetCategories").document()
         
@@ -698,7 +760,7 @@ struct BudgetPlannerView: View {
         let colorHex = category.color.hexString
         
         let data: [String: Any] = [
-            "name": category.name,
+            "name": category.name.trimmingCharacters(in: .whitespacesAndNewlines),
             "amount": category.amount,
             "icon": category.icon,
             "color": colorHex,
@@ -714,8 +776,7 @@ struct BudgetPlannerView: View {
             
             // Add the category locally with the Firestore ID
             let newCategory = BudgetCategory(
-               
-                name: category.name,
+                name: category.name.trimmingCharacters(in: .whitespacesAndNewlines),
                 amount: category.amount,
                 icon: category.icon,
                 color: category.color
@@ -743,7 +804,7 @@ struct BudgetPlannerView: View {
             let colorHex = category.color.hexString
             
             let data: [String: Any] = [
-                "name": category.name,
+                "name": category.name.trimmingCharacters(in: .whitespacesAndNewlines),
                 "amount": category.amount,
                 "icon": category.icon,
                 "color": colorHex,
@@ -903,69 +964,169 @@ struct BudgetPlannerView: View {
         return .degrees((precedingTotal + categoryAmount) / totalBudget * 360 - 90)
     }
     
-    // Auto-budget function
+    // MARK: - Auto Budget Function
+    
+    // Improved auto-budget function
     private func autoBudget() {
-        // Check if we have income set
-        guard monthlyIncome > 0 else {
-            errorMessage = "Please set your monthly income in your profile first"
-            return
+        // First verify we have income amount
+        if monthlyIncome <= 0 {
+            calculateMonthlyIncomeFromTransactions()
+            
+            if monthlyIncome <= 0 {
+                monthlyIncome = 5000 // Set default for testing
+                errorMessage = "Using a default monthly income of $5,000 for budget calculation. You can update this in your profile settings."
+                return
+            }
         }
         
         isLoading = true
         
-        // Apply the 50/30/20 rule (50% needs, 30% wants, 20% savings)
-        let needsBudget = monthlyIncome * 0.5
-        let wantsBudget = monthlyIncome * 0.3
-        let savingsBudget = monthlyIncome * 0.2
-        
-        // Group categories
-        var needsCategories: [BudgetCategory] = []
-        var wantsCategories: [BudgetCategory] = []
-        
-        for category in categories {
-            if CategoryDetailView.isEssentialCategory(category.name) {
-                needsCategories.append(category)
-            } else if category.name != "Savings" {
-                wantsCategories.append(category)
-            }
-        }
-        
-        // Allocate budgets
-        // For needs categories
-        if !needsCategories.isEmpty {
-            let amountPerNeedsCategory = needsBudget / Double(needsCategories.count)
-            for category in needsCategories {
-                updateCategoryAmount(category, amountPerNeedsCategory)
-            }
-        }
-        
-        // For wants categories
-        if !wantsCategories.isEmpty {
-            let amountPerWantsCategory = wantsBudget / Double(wantsCategories.count)
-            for category in wantsCategories {
-                updateCategoryAmount(category, amountPerWantsCategory)
-            }
-        }
-        
-        // Create "Savings" category if it doesn't exist
-        if !categories.contains(where: { $0.name == "Savings" }) {
-            let savingsCategory = BudgetCategory(
-                name: "Savings",
-                amount: savingsBudget,
-                icon: "bag.fill",
-                color: AppTheme.primaryGreen
-            )
+        let defaultCategories = [
+            // Needs (50%)
+            ("Housing", "house.fill", AppTheme.primaryGreen, 0.25, true),  // 25% of income
+            ("Groceries", "cart.fill", AppTheme.accentBlue, 0.10, true),   // 10% of income
+            ("Utilities", "bolt.fill", Color(hex: "#9370DB"), 0.05, true), // 5% of income
+            ("Transportation", "car.fill", AppTheme.accentPurple, 0.05, true), // 5% of income
+            ("Healthcare", "heart.fill", Color(hex: "#FF5757"), 0.05, true), // 5% of income
             
-            addCategory(savingsCategory)
-        } else if let savingsCategory = categories.first(where: { $0.name == "Savings" }) {
-            // Update existing savings category
-            updateCategoryAmount(savingsCategory, savingsBudget)
+            // Wants (30%)
+            ("Dining Out", "fork.knife", Color(hex: "#FF8C00"), 0.08, false), // 8% of income
+            ("Entertainment", "play.tv", Color(hex: "#FFD700"), 0.07, false), // 7% of income
+            ("Shopping", "bag.fill", Color(hex: "#FF69B4"), 0.08, false),    // 8% of income
+            ("Subscriptions", "repeat", Color(hex: "#BA55D3"), 0.04, false), // 4% of income
+            ("Personal Care", "person.fill", Color(hex: "#FF7F50"), 0.03, false), // 3% of income
+            
+            // Savings/Debt (20%)
+            ("Savings", "banknote.fill", AppTheme.primaryGreen, 0.15, false), // 15% of income
+            ("Debt Repayment", "creditcard.fill", Color(hex: "#20B2AA"), 0.05, false) // 5% of income
+        ]
+        
+        guard let userId = Auth.auth().currentUser?.uid else {
+            errorMessage = "User not logged in"
+            isLoading = false
+            return
         }
         
-        // Finish loading
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.isLoading = false
-            self.errorMessage = "Auto-budget complete! Your budget has been optimized using the 50/30/20 rule."
+        let db = Firestore.firestore()
+        
+        // First, get all existing categories to avoid duplicates
+        db.collection("users/\(userId)/budgetCategories").getDocuments { [self] snapshot, error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Error fetching categories: \(error.localizedDescription)"
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            // Dictionary to track existing categories by name
+            var existingCategoriesById: [String: BudgetCategory] = [:]
+            var existingCategoriesByName: [String: BudgetCategory] = [:]
+            
+            if let documents = snapshot?.documents {
+                for document in documents {
+                    if let name = document.data()["name"] as? String,
+                       let amount = document.data()["amount"] as? Double,
+                       let icon = document.data()["icon"] as? String,
+                       let colorHex = document.data()["color"] as? String {
+                        
+                        let category = BudgetCategory(
+                            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                            amount: amount,
+                            icon: icon,
+                            color: Color(hex: colorHex)
+                        )
+                        
+                        existingCategoriesById[document.documentID] = category
+                        existingCategoriesByName[name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)] = category
+                    }
+                }
+            }
+            
+            // Now create a batch to update or add categories
+            let batch = db.batch()
+            
+            // Track categories that will be updated or added
+            var categoriesToUpdate: [BudgetCategory] = []
+            var newCategoriesToAdd: [BudgetCategory] = []
+            
+            // Process each default category
+            for (categoryName, icon, color, percentage, isEssential) in defaultCategories {
+                let categoryNameLowercased = categoryName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                let budgetAmount = monthlyIncome * percentage
+                
+                // Check if this category already exists (by normalized name)
+                if let existingCategory = existingCategoriesByName[categoryNameLowercased] {
+                    // Update existing category with new amount but keep other properties
+                    let categoryRef = db.collection("users/\(userId)/budgetCategories").document(existingCategory.id)
+                    
+                    batch.updateData([
+                        "amount": budgetAmount,
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ], forDocument: categoryRef)
+                    
+                    // Update local copy with new amount
+                    var updatedCategory = existingCategory
+                    updatedCategory.amount = budgetAmount
+                    categoriesToUpdate.append(updatedCategory)
+                } else {
+                    // Create new category
+                    let newCategoryRef = db.collection("users/\(userId)/budgetCategories").document()
+                    
+                    let newCategoryData: [String: Any] = [
+                        "name": categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        "amount": budgetAmount,
+                        "icon": icon,
+                        "color": color.hexString,
+                        "isEssential": isEssential,
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ]
+                    
+                    batch.setData(newCategoryData, forDocument: newCategoryRef)
+                    
+                    // Create local copy for immediate UI update
+                    let newCategory = BudgetCategory(
+                        name: categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        amount: budgetAmount,
+                        icon: icon,
+                        color: color
+                    )
+                    
+                    newCategoriesToAdd.append(newCategory)
+                }
+            }
+            
+            // Commit all the changes
+            batch.commit { error in
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    
+                    if let error = error {
+                        self.errorMessage = "Error updating budget: \(error.localizedDescription)"
+                        return
+                    }
+                    
+                    // Update our local array
+                    
+                    // First update existing categories
+                    for updatedCategory in categoriesToUpdate {
+                        if let index = self.categories.firstIndex(where: { $0.id == updatedCategory.id }) {
+                            self.categories[index] = updatedCategory
+                        }
+                    }
+                    
+                    // Then add new categories
+                    self.categories.append(contentsOf: newCategoriesToAdd)
+                    
+                    // Show success message
+                    self.successMessage = "Budget has been optimized with the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings & debt repayment."
+                    self.showSuccessMessage = true
+                    
+                    // Update budget usage
+                    self.calculateCategorySpending()
+                    self.updateBudgetUsageInFirebase()
+                }
+            }
         }
     }
 }

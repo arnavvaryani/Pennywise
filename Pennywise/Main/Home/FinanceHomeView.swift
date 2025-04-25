@@ -6,11 +6,9 @@
 import SwiftUI
 
 struct FinanceHomeView: View {
-    // MARK: - Properties
     @StateObject private var authService = AuthenticationService.shared
     @EnvironmentObject var plaidManager: PlaidManager
     
-    // State variables
     @State private var showNewTransaction: Bool = false
     @State private var hideBalance: Bool = false
     @State private var selectedCurrencyIndex: Int = 0
@@ -19,7 +17,6 @@ struct FinanceHomeView: View {
     @State private var animateBalance: Bool = false
     @State private var showAllTransactions: Bool = false
     
-    // Animation states
     @State private var cardOffset: CGFloat = 1000
     @State private var opacity: Double = 0
     @State private var scale: CGFloat = 0.8
@@ -27,7 +24,6 @@ struct FinanceHomeView: View {
     @State private var selectedAccount: PlaidAccount? = nil
     @State private var showAccountDetails: Bool = false
     
-    // Computed properties
     var totalBalance: Double {
         plaidManager.accounts.reduce(0) { $0 + $1.balance }
     }
@@ -169,7 +165,6 @@ struct FinanceHomeView: View {
     
     private var balanceCardView: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // ── Header with clearer label ───────────────────────────────────────────
             HStack {
                 Text("Total Bank Balance")
                     .font(.headline)
@@ -195,7 +190,6 @@ struct FinanceHomeView: View {
                 .buttonStyle(PlainButtonStyle())
             }
 
-            // ── Animated balance ─────────────────────────────────────────
             Group {
                 if hideBalance {
                     Text("$•••••••")
@@ -214,7 +208,6 @@ struct FinanceHomeView: View {
             Divider()
                 .background(AppTheme.cardStroke)
 
-            // ── Financial metrics row with monthly labels ────────────────────────────────
             HStack(spacing: 12) {
                 // Monthly Income
                 VStack(alignment: .leading, spacing: 4) {
@@ -241,9 +234,7 @@ struct FinanceHomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             
-            // Second row for Debt & Investments
             HStack(spacing: 12) {
-                // Debt
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Total Debt")
                         .font(.caption)
@@ -255,7 +246,6 @@ struct FinanceHomeView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Investments
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Investments")
                         .font(.caption)
@@ -282,7 +272,6 @@ struct FinanceHomeView: View {
     }
 
     
-    // Transactions section using currently displayed transactions
     private var transactionsSection: some View {
         VStack(spacing: 12) {
             HStack {
@@ -319,7 +308,6 @@ struct FinanceHomeView: View {
         }
     }
     
-    // Empty transactions view with context
     private func emptyTransactionsView(for period: String) -> some View {
         VStack(spacing: 20) {
             Image(systemName: "doc.text")
@@ -355,7 +343,6 @@ struct FinanceHomeView: View {
         .padding(.horizontal)
     }
     
-    // All transactions view - shows all transactions
     private var allTransactionsView: some View {
         VStack(spacing: 12) {
             HStack {
@@ -392,7 +379,6 @@ struct FinanceHomeView: View {
             }
             .padding(.horizontal)
             
-            // Show all transactions
             if plaidManager.transactions.isEmpty {
                 emptyTransactionsView(for: "available")
                     .padding(.top, 20)
@@ -416,7 +402,6 @@ struct FinanceHomeView: View {
         }
     }
     
-    // Accounts section
     private var accountsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Your Accounts")
@@ -458,10 +443,8 @@ struct FinanceHomeView: View {
         }
     }
     
-    // Account card view
     private func accountCard(for account: PlaidAccount) -> some View {
         Button(action: {
-            // Show account details sheet
             selectedAccount = account
             showAccountDetails = true
         }) {
@@ -516,14 +499,12 @@ struct FinanceHomeView: View {
         .buttonStyle(ScaleButtonStyle())
     }
     
-    // Profile sheet view - placeholder for integration
     private var profileSheetView: some View {
         Text("Profile Sheet")
     }
     
     // MARK: - Functions
     private func addTransaction(transaction: Transaction) {
-        // Create a new transaction
         let newTransaction = PlaidTransaction(
             id: UUID().uuidString,
             name: transaction.title,
@@ -541,7 +522,6 @@ struct FinanceHomeView: View {
     }
 }
 
-// Count animation for numbers
 struct CountingView: View {
     let value: Double
     let format: String
@@ -564,7 +544,6 @@ struct FinanceHomeView_Previews: PreviewProvider {
     }
 }
 
-// Profile option row
 struct ProfileOptionRow: View {
     let icon: String
     let title: String

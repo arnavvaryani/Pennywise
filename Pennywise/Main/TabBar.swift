@@ -23,7 +23,8 @@ struct TabBar: View {
         TabItem(icon: "chart.bar.xaxis", title: "Insights"),
         TabItem(icon: "plus.circle.fill", title: "Add"),
         TabItem(icon: "target", title: "Budget"),
-        TabItem(icon: "gear", title: "Settings")
+        TabItem(icon: "gear", title: "Settings"),
+        TabItem(icon: "brain.head.profile", title: "PennyGPT")
     ]
     
     var body: some View {
@@ -153,7 +154,7 @@ struct TabBar: View {
                 .position(x: UIScreen.main.bounds.width / 2, y: 0.5)
         }
         .shadow(color: Color.black.opacity(0.1), radius: 20, x: 0, y: -5)
-        .edgesIgnoringSafeArea(.bottom)
+        .edgesIgnoringSafeArea(.all)
     }
 }
 

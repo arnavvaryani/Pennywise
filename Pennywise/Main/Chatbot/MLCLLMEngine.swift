@@ -1,12 +1,4 @@
-//
-//  MLCLLMEngine.swift
-//  Pennywise
-//
-//  Created by Arnav Varyani on 4/22/25.
-//
-
 //import Foundation
-//import CoreML
 //import Accelerate
 //
 ///// A lightweight interface for MLC LLM's model loading and inference
@@ -33,7 +25,7 @@
 //        case modelNotLoaded
 //        case tokenizerNotFound
 //        case engineInitFailed
-//        case generationFailed
+//        case generationFailued
 //        case invalidPrompt
 //        case cancelled
 //        
@@ -47,7 +39,7 @@
 //                return "Tokenizer not found in the app bundle."
 //            case .engineInitFailed:
 //                return "Failed to initialize the LLM engine."
-//            case .generationFailed:
+//            case .generationFailued:
 //                return "Text generation failed."
 //            case .invalidPrompt:
 //                return "The provided prompt is invalid."
@@ -58,7 +50,7 @@
 //    }
 //    
 //    private init() {
-//        // In a real implementation, these paths would point to files in the app bundle
+//        // Paths would point to files in the app bundle
 //        let appBundle = Bundle.main.bundleURL
 //        modelDirectory = appBundle.appendingPathComponent("Models/\(modelName)")
 //        tokenizerPath = appBundle.appendingPathComponent("Models/tokenizer.model")
@@ -104,7 +96,7 @@
 //        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
 //            guard let self = self else { return }
 //            
-//            // Simulate loading phases for UI testing
+//            // For now, simulate loading phases for UI testing
 //            self.simulateModelLoading(progressCallback: progressCallback) { result in
 //                switch result {
 //                case .success:
@@ -119,48 +111,12 @@
 //                }
 //            }
 //            
-//            /* 
-//             In a real implementation, you would:
-//             
-//             1. Initialize the MLC runtime
-//             2. Load the model weights
-//             3. Set up the inference engine
-//             4. Initialize the tokenizer
-//             
-//             This might look something like:
-//             
-//             do {
-//                // Initialize MLC LLM
-//                let config = MLCConfig(modelPath: self.modelDirectory.path,
-//                                      tokenizerPath: self.tokenizerPath.path)
-//                
-//                try mlcLLMInitialize(config)
-//                
-//                // Load tokenizer
-//                try loadTokenizer(tokenizerPath: self.tokenizerPath.path)
-//                
-//                // Load model weights with progress updates
-//                try loadModel(modelPath: self.modelDirectory.path) { progress in
-//                    DispatchQueue.main.async {
-//                        progressCallback(progress)
-//                    }
-//                }
-//                
-//                self.isModelLoaded = true
-//                DispatchQueue.main.async {
-//                    completion(.success(()))
-//                }
-//             } catch {
-//                DispatchQueue.main.async {
-//                    completion(.failure(error))
-//                }
-//             }
-//             */
+//            // In a real implementation, you would integrate with MLC LLM here
 //        }
 //    }
 //    
 //    /// Generate text from a prompt
-//    func generateText(prompt: String, 
+//    func generateText(prompt: String,
 //                      temperature: Float = 0.7,
 //                      maxTokens: Int = 512,
 //                      topP: Float = 0.95,
@@ -188,7 +144,7 @@
 //            guard let self = self else { return }
 //            
 //            // Simulate text generation for UI testing
-//            self.simulateTextGeneration(prompt: prompt, 
+//            self.simulateTextGeneration(prompt: prompt,
 //                                       tokenCallback: tokenCallback) { result in
 //                // Reset generating flag
 //                self.isGenerating = false
@@ -199,54 +155,7 @@
 //                }
 //            }
 //            
-//            /*
-//             In a real implementation, you would:
-//             
-//             1. Format the prompt according to the model's requirements
-//             2. Tokenize the prompt
-//             3. Run inference with the specified parameters
-//             4. Stream tokens back as they're generated
-//             5. Handle stop tokens and max length
-//             
-//             This might look something like:
-//             
-//             do {
-//                // Format prompt for Llama 2
-//                let formattedPrompt = formatPromptForLlama2(prompt)
-//                
-//                // Tokenize prompt
-//                let tokens = try tokenize(formattedPrompt)
-//                
-//                // Setup generation parameters
-//                let params = GenerationParams(
-//                    temperature: temperature,
-//                    topP: topP,
-//                    maxTokens: maxTokens,
-//                    stopTokens: stopTokens
-//                )
-//                
-//                // Generate text
-//                var fullResponse = ""
-//                try generate(tokens: tokens, params: params) { token in
-//                    let tokenText = detokenize(token)
-//                    fullResponse += tokenText
-//                    
-//                    DispatchQueue.main.async {
-//                        tokenCallback(tokenText)
-//                    }
-//                }
-//                
-//                self.isGenerating = false
-//                DispatchQueue.main.async {
-//                    completion(.success(fullResponse))
-//                }
-//             } catch {
-//                self.isGenerating = false
-//                DispatchQueue.main.async {
-//                    completion(.failure(error))
-//                }
-//             }
-//             */
+//            // In a real implementation, you would integrate with MLC LLM here
 //        }
 //    }
 //    
@@ -254,24 +163,13 @@
 //    func cancelGeneration() {
 //        if isGenerating {
 //            isGenerating = false
-//            
-//            /*
-//             In a real implementation, you would:
-//             
-//             1. Signal the inference loop to stop
-//             2. Clean up any resources
-//             
-//             This might look something like:
-//             
-//             stopGeneration()
-//             */
 //        }
 //    }
 //    
 //    // MARK: - Helper Methods for Simulating Behavior
 //    
 //    /// Simulate the model loading process for UI development
-//    private func simulateModelLoading(progressCallback: @escaping ProgressCallback, 
+//    private func simulateModelLoading(progressCallback: @escaping ProgressCallback,
 //                                     completion: @escaping (Result<Void, Error>) -> Void) {
 //        // Define loading phases and their simulated duration
 //        let phases: [(name: String, duration: TimeInterval, weight: Float)] = [

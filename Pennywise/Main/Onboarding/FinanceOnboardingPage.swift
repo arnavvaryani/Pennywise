@@ -11,7 +11,6 @@ struct FinanceOnboardingPage {
     let title: String
     let description: String
     let imageName: String
-    let backgroundColor: Color
 }
 
 struct FinanceOnboardingView: View {
@@ -21,40 +20,37 @@ struct FinanceOnboardingView: View {
     
     private let pages = [
         FinanceOnboardingPage(
-            title: "Welcome to FinanceTracker",
+            title: "Welcome to Pennywise",
             description: "Take control of your finances with our smart tracking and analytics tools that help you understand your spending habits and financial health.",
-            imageName: "dollarsign.circle",
-            backgroundColor: .white
+            imageName: "dollarsign.circle"
         ),
         FinanceOnboardingPage(
             title: "Track Your Spending",
             description: "Easily log your daily expenses and income to keep a real-time overview of your financial situation.",
-            imageName: "list.bullet.clipboard",
-            backgroundColor: .white
+            imageName: "list.bullet.clipboard"
         ),
         FinanceOnboardingPage(
             title: "Smart Analytics",
             description: "Gain insights through detailed charts and reports that help you understand exactly where your money goes.",
-            imageName: "chart.bar.xaxis",
-            backgroundColor: .white
+            imageName: "chart.bar.xaxis"
         ),
         FinanceOnboardingPage(
             title: "Financial Goals",
             description: "Set and track financial goals like saving for a vacation, paying off debt, or building an emergency fund.",
-            imageName: "target",
-            backgroundColor: .white
+            imageName: "target"
         ),
         FinanceOnboardingPage(
             title: "Secure & Private",
             description: "Your financial data is encrypted and never shared. We take security seriously so you can focus on your finances.",
-            imageName: "lock.shield",
-            backgroundColor: .white
+            imageName: "lock.shield"
         )
     ]
     
     var body: some View {
         ZStack {
-            backgroundGradient
+            // Background gradient from AppTheme
+            AppTheme.backgroundGradient
+                .edgesIgnoringSafeArea(.all)
             
             TabView(selection: $viewModel.currentPage) {
                 ForEach(0..<pages.count, id: \.self) { index in
@@ -76,7 +72,7 @@ struct FinanceOnboardingView: View {
                             hasCompletedOnboarding = true
                         }
                         .padding()
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
                     }
                     
                     Spacer()
@@ -99,7 +95,7 @@ struct FinanceOnboardingView: View {
                         }
                     }
                     .padding()
-                    .foregroundColor(AppTheme.primary)
+                    .foregroundColor(AppTheme.primaryGreen)
                     .fontWeight(.semibold)
                 }
                 .padding(.bottom, 30)
@@ -112,7 +108,7 @@ struct FinanceOnboardingView: View {
     }
     
     private func pageView(for page: FinanceOnboardingPage) -> some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 30) {
             Spacer()
             
             Text(page.title)
@@ -120,37 +116,35 @@ struct FinanceOnboardingView: View {
                 .fontWeight(.bold)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
-                .foregroundColor(AppTheme.primary)
+                .foregroundColor(AppTheme.textColor)
             
-            Image(systemName: page.imageName)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(height: 120)
-                .foregroundColor(AppTheme.primary)
-                .padding(.vertical, 30)
+            // Icon with themed colors and glow effect
+            ZStack {
+                Circle()
+                    .fill(AppTheme.primaryGreen.opacity(0.15))
+                    .frame(width: 160, height: 160)
+                    .blur(radius: 20)
+                
+                Image(systemName: page.imageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(height: 80)
+                    .foregroundColor(AppTheme.primaryGreen)
+                    .shadow(color: AppTheme.primaryGreen.opacity(0.5), radius: 10, x: 0, y: 0)
+            }
+            .padding(.vertical, 20)
             
             Text(page.description)
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textColor.opacity(0.7))
             
             Spacer()
             Spacer()
         }
         .padding()
-    }
-    
-    private var backgroundGradient: some View {
-        let colors = colorScheme == .dark
-            ? [Color.black, Color("121212")]
-            : [Color( "F8F9FA"), Color( "E9ECEF")]
-        
-        return LinearGradient(
-            gradient: Gradient(colors: colors),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        .animation(.easeOut, value: viewModel.currentPage)
     }
 }
 
@@ -181,11 +175,18 @@ struct PageIndicator: View {
         HStack(spacing: 8) {
             ForEach(0..<numberOfPages, id: \.self) { page in
                 Circle()
-                    .fill(currentPage == page ? AppTheme.primary : Color.secondary.opacity(0.3))
+                    .fill(currentPage == page ? AppTheme.primaryGreen : AppTheme.textColor.opacity(0.3))
                     .frame(width: 8, height: 8)
                     .scaleEffect(currentPage == page ? 1.2 : 1.0)
                     .animation(.spring(), value: currentPage)
             }
         }
+    }
+}
+
+struct FinanceOnboardingView_Previews: PreviewProvider {
+    static var previews: some View {
+        FinanceOnboardingView()
+            .preferredColorScheme(.dark)
     }
 }

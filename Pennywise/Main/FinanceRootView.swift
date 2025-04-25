@@ -26,23 +26,23 @@ struct FinanceRootView: View {
                     NavigationView {
                         FinanceHomeView()
                             .navigationTitle("Home")
-                            .navigationBarTitleDisplayMode(.inline)
+                                    .navigationBarTitleDisplayMode(.inline)
+                                    .toolbarBackground(AppTheme.backgroundPrimary, for: .navigationBar)
+                                    .toolbarBackground(.visible, for: .navigationBar)
                     }
                     .tag(0)
                     
                     // Insights Tab
                     NavigationView {
                         InsightsView()
-                            .navigationTitle("Insights")
                             .navigationBarTitleDisplayMode(.inline)
+                            .navigationTitle("Insights")
+                                    .navigationBarTitleDisplayMode(.inline)
+                                    .toolbarBackground(AppTheme.backgroundPrimary, for: .navigationBar)
+                                    .toolbarBackground(.visible, for: .navigationBar)
                     }
                     .tag(1)
                     
-                    // This is a placeholder for the Add button
-                    Color.clear
-                        .tag(2)
-                    
-                    // Budget Tab
                     NavigationView {
                         BudgetPlannerView()
                             .navigationTitle("Budget")
@@ -50,7 +50,6 @@ struct FinanceRootView: View {
                     }
                     .tag(3)
                     
-                    // Settings Tab
                     NavigationView {
                        SettingsView()
                             .navigationTitle("Settings")
@@ -58,24 +57,15 @@ struct FinanceRootView: View {
                     }
                     .tag(4)
                     
-//                    NavigationView {
-//                        PennyGPTView()
-//                            .navigationTitle("GPT")
-//                            .navigationBarTitleDisplayMode(.inline)
-//                    }
-//                    .tag(5)
                 }
                 .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
                 
-                // Use our enhanced tab bar
             TabBar(selectedTab: $selectedTab, showAddTransaction: $showAddTransaction)
             }
             .edgesIgnoringSafeArea(.bottom)
         }
         .sheet(isPresented: $showAddTransaction) {
-            // Add transaction modal
             TransactionView(isPresented: $showAddTransaction) { transaction in
-                // Handle the new transaction
                 addTransaction(transaction: transaction)
             }
         }
@@ -87,10 +77,7 @@ struct FinanceRootView: View {
         }
     }
     
-    // Function to add a transaction to the Plaid manager
     private func addTransaction(transaction: Transaction) {
-        // In a real app, you would save the transaction to the database
-        // For now, we'll just update the local state with a new PlaidTransaction
         let newTransaction = PlaidTransaction(
             id: UUID().uuidString,
             name: transaction.title,
