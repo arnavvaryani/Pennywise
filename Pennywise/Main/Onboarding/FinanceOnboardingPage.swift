@@ -30,11 +30,6 @@ struct FinanceOnboardingView: View {
             imageName: "list.bullet.clipboard"
         ),
         FinanceOnboardingPage(
-            title: "Smart Analytics",
-            description: "Gain insights through detailed charts and reports that help you understand exactly where your money goes.",
-            imageName: "chart.bar.xaxis"
-        ),
-        FinanceOnboardingPage(
             title: "Financial Goals",
             description: "Set and track financial goals like saving for a vacation, paying off debt, or building an emergency fund.",
             imageName: "target"

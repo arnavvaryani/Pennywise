@@ -160,16 +160,6 @@ struct FinanceLoginView: View {
                 AuthErrorView(error: error)
             }
             
-            // Forgot password
-            HStack {
-                Spacer()
-                Button(action: forgotPassword) {
-                    Text("Forgot Password?")
-                        .font(.footnote)
-                        .foregroundColor(AppTheme.primaryGreen)
-                }
-            }
-            .padding(.trailing, 8)
         }
         .padding(.horizontal, 16)
     }

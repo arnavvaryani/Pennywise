@@ -456,11 +456,10 @@ class FirestoreManager: ObservableObject {
     }
     
     // MARK: - Financial Insights
-    
-    /// Updates monthly financial summaries for insights
+
     func updateMonthlySummaries(from transactions: [PlaidTransaction], completion: @escaping (Bool) -> Void) {
-        guard let userId = userId else {
-            error = NSError(domain: "FirestoreManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "User not signed in"])
+        guard let userId = Auth.auth().currentUser?.uid else {
+            error = NSError(domain: "FirestoreManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "User not logged in"])
             completion(false)
             return
         }
@@ -503,11 +502,20 @@ class FirestoreManager: ObservableObject {
                 categorySpending[transaction.category, default: 0] += transaction.amount
             }
             
+            // FIX: Convert the top categories to a format Firestore supports
+            // Instead of dictionary with nested types, use an array of maps with simple string/number fields
             let topCategories = categorySpending.map { (category: String, amount: Double) -> [String: Any] in
                 return ["category": category, "amount": amount]
-            }.sorted { a, b in
-                (a["amount"] as! Double) > (b["amount"] as! Double)
-            }.prefix(5)
+            }.sorted { (a, b) -> Bool in
+                // Sort by amount in descending order
+                return (a["amount"] as! Double) > (b["amount"] as! Double)
+            }.prefix(5).map { category -> [String: Any] in
+                // Convert to a format Firestore definitely supports
+                return [
+                    "category": category["category"] as! String,
+                    "amount": category["amount"] as! Double
+                ]
+            }
             
             // Get previous month data to calculate change
             let dateFormatter = DateFormatter()
@@ -526,14 +534,14 @@ class FirestoreManager: ObservableObject {
                 .document(userId)
                 .collection("budget")
                 .document(previousYearMonth)
-      
+          
 
             let previousSummaryRef = db
                 .collection("users")
                 .document(userId)
                 .collection("monthlySummaries")
+                    
                 
-            
             previousSummaryRef.document(previousYearMonth).getDocument { [weak self] document, error in
                 guard let self = self else {
                     group.leave()
@@ -555,7 +563,7 @@ class FirestoreManager: ObservableObject {
                     "income": income,
                     "expenses": expenses,
                     "savingsRate": savingsRate,
-                    "topCategories": topCategories,
+                    "topCategories": topCategories, // Now properly formatted for Firestore
                     "monthlyChange": monthlyChange,
                     "updatedAt": FieldValue.serverTimestamp()
                 ]
@@ -656,7 +664,7 @@ class FirestoreManager: ObservableObject {
         let batch = db.batch()
         
         // First, delete existing tips
-        db.collection("users/\(userId)/insights/savingsTips").getDocuments { [weak self] snapshot, error in
+        db.collection("users/\(userId)/savingsTips").getDocuments { [weak self] snapshot, error in
             guard let self = self else {
                 completion(false)
                 return
@@ -679,7 +687,7 @@ class FirestoreManager: ObservableObject {
             
             // Add new tips
             for tip in tips {
-                let tipRef = self.db.collection("users/\(userId)/insights/savingsTips").document()
+                let tipRef = self.db.collection("users/\(userId)/savingsTips").document()
                 batch.setData(tip, forDocument: tipRef)
             }
             

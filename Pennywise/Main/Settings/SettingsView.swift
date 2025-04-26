@@ -58,12 +58,6 @@ struct SettingsView: View {
                     // Security section (with fixed biometrics)
                     securitySection
                     
-                    // Display preferences section
-                    displayPreferencesSection
-                    
-                    // Budget preferences section
-                    budgetPreferencesSection
-                    
                     // Data management section
                     dataManagementSection
                     
@@ -328,76 +322,7 @@ struct SettingsView: View {
         }
     }
     
-    
-    // MARK: - Display Preferences Section
-    private var displayPreferencesSection: some View {
-        VStack(spacing: 16) {
-            sectionHeader("Display Preferences")
-            
-            settingsCard {
-                // Show balance on home screen
-                settingsToggle(
-                    title: "Show Balance on Home Screen",
-                    subtitle: "Display your account balance in the home view",
-                    isOn: $showBalanceOnHomeScreen,
-                    icon: "eye.fill"
-                )
-            }
-        }
-    }
-    
-    // MARK: - Budget Preferences Section
-    private var budgetPreferencesSection: some View {
-        VStack(spacing: 16) {
-            sectionHeader("Budget Preferences")
-            
-            settingsCard {
-                // Budget cycle start day
-                HStack {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 22))
-                        .foregroundColor(AppTheme.primaryGreen)
-                        .frame(width: 36)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Budget Cycle Start Day")
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Text("Monthly budgets will reset on this day")
-                            .font(.caption)
-                            .foregroundColor(AppTheme.textColor.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                    
-                    Menu {
-                        ForEach(monthDays, id: \.self) { day in
-                            Button {
-                                budgetCycleStartDay = Int(day) ?? 1
-                            } label: {
-                                Text(day)
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Text("\(budgetCycleStartDay)")
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            
-                            Image(systemName: "chevron.down")
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                                .font(.system(size: 14))
-                        }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(AppTheme.accentPurple.opacity(0.2))
-                        .cornerRadius(8)
-                    }
-                }
-                .padding(.vertical, 12)
-            }
-        }
-    }
-    
+   
     // MARK: - Data Management Section
     private var dataManagementSection: some View {
         VStack(spacing: 16) {
@@ -419,7 +344,7 @@ struct SettingsView: View {
                     plaidManager.disconnectAllAccounts()
                 }) {
                     HStack {
-                        Image(systemName: "link.badge.minus")
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
                             .font(.system(size: 22))
                             .foregroundColor(AppTheme.alertOrange)
                             .frame(width: 36)

@@ -63,16 +63,6 @@ struct LoginFieldsView: View {
                 AuthErrorView(error: error)
             }
             
-            // Forgot password
-            HStack {
-                Spacer()
-                Button(action: forgotPasswordAction) {
-                    Text("Forgot Password?")
-                        .font(.footnote)
-                        .foregroundColor(.white.opacity(0.8))
-                }
-            }
-            .padding(.trailing, 8)
         }
         .padding(.horizontal, 24)
     }

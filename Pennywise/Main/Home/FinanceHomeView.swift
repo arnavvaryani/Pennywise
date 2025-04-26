@@ -582,6 +582,10 @@ struct AllTransactionsView: View {
                 }
             }
             .navigationTitle("All Transactions")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(Color(hex: "#161616"), for: .navigationBar)
+            .tint(.green)
             .sheet(item: $selectedTransaction) { transaction in
                 TransactionDetailViewFirestore(transaction: transaction)
                     .environmentObject(plaidManager)
@@ -905,7 +909,7 @@ struct AccountDetailView: View {
                             Button(action: {
                                 // Disconnect account
                             }) {
-                                Label("Disconnect", systemImage: "link.badge.minus")
+                                Label("Disconnect", systemImage: "rectangle.portrait.and.arrow.right")
                                     .font(.subheadline)
                                     .foregroundColor(AppTheme.expenseColor)
                                     .padding()

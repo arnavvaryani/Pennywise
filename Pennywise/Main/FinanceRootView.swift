@@ -26,49 +26,46 @@ struct FinanceRootView: View {
                     NavigationView {
                         FinanceHomeView()
                             .navigationTitle("Home")
-                                    .navigationBarTitleDisplayMode(.inline)
-                                    .toolbarBackground(AppTheme.backgroundPrimary, for: .navigationBar)
-                                    .toolbarBackground(.visible, for: .navigationBar)
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.visible, for: .navigationBar)
+                            .toolbarBackground(Color(hex: "#161616"), for: .navigationBar)
+                        
                     }
                     .tag(0)
                     
                     // Insights Tab
                     NavigationView {
                         InsightsView()
-                            .navigationBarTitleDisplayMode(.inline)
                             .navigationTitle("Insights")
-                                    .navigationBarTitleDisplayMode(.inline)
-                                    .toolbarBackground(AppTheme.backgroundPrimary, for: .navigationBar)
-                                    .toolbarBackground(.visible, for: .navigationBar)
-                    }
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.visible, for: .navigationBar)
+                        .toolbarBackground(Color(hex: "#161616"), for: .navigationBar)                    }
                     .tag(1)
                     
+                    // Budget Tab
                     NavigationView {
                         BudgetPlannerView()
                             .navigationTitle("Budget")
                             .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.visible, for: .navigationBar)
+                            .toolbarBackground(Color(hex: "#161616"), for: .navigationBar)
                     }
                     .tag(3)
                     
-//                    NavigationView {
-//                        FinancialAssistantView()
-//                            .navigationTitle("Assistant")
-//                            .navigationBarTitleDisplayMode(.inline)
-//                    }
-//                    .tag(4)
-                    
+                    // Settings Tab
                     NavigationView {
                        SettingsView()
                             .navigationTitle("Settings")
                             .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.visible, for: .navigationBar)
+                            .toolbarBackground(Color(hex: "#161616"), for: .navigationBar)
                     }
                     .tag(4)
-
                     
                 }
                 .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
                 
-            TabBar(selectedTab: $selectedTab, showAddTransaction: $showAddTransaction)
+                TabBar(selectedTab: $selectedTab, showAddTransaction: $showAddTransaction)
             }
             .edgesIgnoringSafeArea(.bottom)
         }
