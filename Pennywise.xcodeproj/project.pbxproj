@@ -11,6 +11,7 @@
 		474102882DBC1E170084AA40 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 474102872DBC1E170084AA40 /* FirebaseCore */; };
 		4741028A2DBC1E170084AA40 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 474102892DBC1E170084AA40 /* FirebaseFirestore */; };
 		4741028C2DBC1E170084AA40 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 4741028B2DBC1E170084AA40 /* FirebaseStorage */; };
+		474102A02DBC91260084AA40 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4741029F2DBC91260084AA40 /* Assets.xcassets */; };
 		476924E72DA88C1400E429B7 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 476924E62DA88C1400E429B7 /* GoogleSignIn */; };
 		476924E92DA88C1400E429B7 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 476924E82DA88C1400E429B7 /* GoogleSignInSwift */; };
 		476924F52DA88CDF00E429B7 /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 476924F42DA88CDF00E429B7 /* LinkKit */; };
@@ -34,6 +35,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		4741029F2DBC91260084AA40 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		47E690E22DA5A80A00653E82 /* Pennywise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pennywise.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		47E690F12DA5A80D00653E82 /* PennywiseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PennywiseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		47E690FB2DA5A80D00653E82 /* PennywiseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PennywiseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -105,6 +107,7 @@
 		47E690D92DA5A80A00653E82 = {
 			isa = PBXGroup;
 			children = (
+				4741029F2DBC91260084AA40 /* Assets.xcassets */,
 				47E690E42DA5A80A00653E82 /* Pennywise */,
 				47E690F42DA5A80D00653E82 /* PennywiseTests */,
 				47E690FE2DA5A80D00653E82 /* PennywiseUITests */,
@@ -254,6 +257,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				474102A02DBC91260084AA40 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

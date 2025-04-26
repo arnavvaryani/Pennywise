@@ -13,14 +13,15 @@ struct BudgetPlannerView: View {
     @State private var isRefreshing: Bool = false
     @State private var animateCards: Bool = false
     @State private var isLoading: Bool = true
-    @State private var selectedCategory: BudgetCategory? = nil // Directly using as sheet item
+    @State private var selectedCategory: BudgetCategory? = nil
     @State private var categorySpending: [String: Double] = [:]
     @State private var errorMessage: String? = nil
     @State private var showSuccessMessage = false
     @State private var successMessage = ""
     
-    // Track if auto budget has been used
-    @AppStorage("hasUsedAutoBudget") private var hasUsedAutoBudget = false
+    // Control auto-budget feature - Reset on each app run
+    @State private var isAutobudgetRunning = false
+    @AppStorage("lastAutobudgetDate") private var lastAutobudgetDate: Double = 0
     
     // Budget metrics
     var totalBudget: Double {
@@ -29,6 +30,26 @@ struct BudgetPlannerView: View {
     
     var remainingBudget: Double {
         monthlyIncome - totalBudget
+    }
+    
+    // Debug logging for budget calculation
+    func logBudgetValues() {
+        print("DEBUG: Monthly Income = \(monthlyIncome)")
+        print("DEBUG: Total Budget = \(totalBudget)")
+        print("DEBUG: Remaining = \(remainingBudget)")
+        print("DEBUG: Categories count = \(categories.count)")
+        print("DEBUG: Total Spent This Month = \(totalSpentThisMonth)")
+        if !categories.isEmpty {
+            for category in categories {
+                let spent = calculateSpentForCategory(category)
+                print("DEBUG: Category \(category.name) = Budget: $\(category.amount), Spent: $\(spent)")
+            }
+        }
+        
+        print("DEBUG: Category Spending Map:")
+        for (category, amount) in categorySpending {
+            print("DEBUG:  - \(category): $\(amount)")
+        }
     }
     
     var totalSpentThisMonth: Double {
@@ -53,7 +74,7 @@ struct BudgetPlannerView: View {
     }
     
     var budgetStatus: BudgetStatus {
-        let ratio = totalSpentThisMonth / totalBudget
+        let ratio = totalBudget > 0 ? totalSpentThisMonth / totalBudget : 0
         if ratio > 1.0 {
             return .overBudget
         } else if ratio > 0.9 {
@@ -113,12 +134,12 @@ struct BudgetPlannerView: View {
                     }
                     .padding(.vertical, 6)
                     .padding(.horizontal, 10)
-                    .background(AppTheme.primaryGreen.opacity(hasUsedAutoBudget ? 0.1 : 0.2))
+                    .background(AppTheme.primaryGreen.opacity(0.2))
                     .cornerRadius(8)
-                    .foregroundColor(AppTheme.primaryGreen.opacity(hasUsedAutoBudget ? 0.5 : 1.0))
+                    .foregroundColor(AppTheme.primaryGreen)
                 }
                 .buttonStyle(ScaleButtonStyle())
-                .disabled(hasUsedAutoBudget)
+                .disabled(isAutobudgetRunning) // Disable only during operation
             }
         }
         .onAppear {
@@ -248,29 +269,59 @@ struct BudgetPlannerView: View {
                 .foregroundColor(AppTheme.textColor)
             
             Spacer()
+            
+            // Optional refresh button
+            Button(action: {
+                refreshBudgetData()
+            }) {
+                Image(systemName: "arrow.clockwise")
+                    .foregroundColor(AppTheme.primaryGreen)
+                    .rotationEffect(Angle(degrees: isRefreshing ? 360 : 0))
+                    .animation(isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+            }
+            .disabled(isRefreshing)
         }
     }
     
     // Budget overview card
     private var budgetOverviewCard: some View {
-        HStack(spacing: 0) {
-            // Budgeted
-            budgetStatColumn(
-                title: "Budgeted",
-                amount: totalBudget,
-                icon: "chart.pie.fill",
-                color: AppTheme.accentBlue,
-                showBorder: true
-            )
+        VStack(spacing: 5) {
+            HStack(spacing: 0) {
+                // Income
+                budgetStatColumn(
+                    title: "Income",
+                    amount: monthlyIncome,
+                    icon: "arrow.down.circle.fill",
+                    color: AppTheme.primaryGreen,
+                    showBorder: true
+                )
+                
+                // Budgeted
+                budgetStatColumn(
+                    title: "Budgeted",
+                    amount: totalBudget,
+                    icon: "chart.pie.fill",
+                    color: AppTheme.accentBlue,
+                    showBorder: true
+                )
+                
+                // Remaining
+                budgetStatColumn(
+                    title: "Remaining",
+                    amount: remainingBudget,
+                    icon: "banknote.fill",
+                    color: remainingBudget >= 0 ? AppTheme.primaryGreen : Color(hex: "#FF5757"),
+                    showBorder: false
+                )
+            }
             
-            // Remaining
-            budgetStatColumn(
-                title: "Remaining",
-                amount: remainingBudget,
-                icon: "banknote.fill",
-                color: remainingBudget >= 0 ? AppTheme.primaryGreen : Color(hex: "#FF5757"),
-                showBorder: false
-            )
+            // Debug line for transparency - shown only in debug
+            #if DEBUG
+            Text("Income: $\(Int(monthlyIncome)) - Budgeted: $\(Int(totalBudget)) = Remaining: $\(Int(remainingBudget))")
+                .font(.caption2)
+                .foregroundColor(AppTheme.textColor.opacity(0.5))
+                .padding(.bottom, 5)
+            #endif
         }
         .background(AppTheme.cardBackground)
         .cornerRadius(16)
@@ -278,9 +329,9 @@ struct BudgetPlannerView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(AppTheme.cardStroke, lineWidth: 1)
         )
+        .id("budget-overview-\(monthlyIncome)-\(totalBudget)") // Force refresh when values change
     }
     
-    // Budget progress card
     private var budgetProgressCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Budget Progress")
@@ -397,7 +448,7 @@ struct BudgetPlannerView: View {
             if totalBudget > 0 {
                 // Pie chart visualization
                 HStack {
-                    // Chart (made non-interactive)
+                    // Chart
                     ZStack {
                         ForEach(0..<categories.count, id: \.self) { index in
                             PieSlice(
@@ -405,7 +456,9 @@ struct BudgetPlannerView: View {
                                 endAngle: calculateEndAngle(for: index)
                             )
                             .fill(categories[index].color)
-                            // Remove interactive gesture - pie chart should be display-only
+                            .onTapGesture {
+                                selectedCategory = categories[index]
+                            }
                         }
                         
                         // Center circle
@@ -427,11 +480,10 @@ struct BudgetPlannerView: View {
                     }
                     .frame(width: 150, height: 150)
                     
-                    // Legend with clickable items
+                    // Legend
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(categories.prefix(5)) { category in
                             Button(action: {
-                                // Set selected category directly which triggers sheet
                                 selectedCategory = category
                             }) {
                                 HStack(spacing: 8) {
@@ -482,64 +534,6 @@ struct BudgetPlannerView: View {
         )
     }
     
-    // Categories list view
-    private func categoriesListView(categories: [BudgetCategory]) -> some View {
-        VStack(spacing: 16) {
-            if categories.isEmpty {
-                // Empty state is already shown in budgetAllocationCard
-                EmptyView()
-            } else {
-                ForEach(categories) { category in
-                    BudgetCategoryRow(
-                        category: category,
-                        spent: calculateSpentForCategory(category),
-                        onTap: {
-                            // Set selected category directly which triggers sheet via .sheet(item:)
-                            selectedCategory = category
-                        },
-                        onAmountChange: { newAmount in
-                            updateCategoryAmount(category, newAmount)
-                        },
-                        onDelete: { deleteCategory(category) }
-                    )
-                    .padding(.horizontal)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
-                }
-            }
-        }
-    }
-    
-    // Budget stat column
-    private func budgetStatColumn(title: String, amount: Double, icon: String, color: Color, showBorder: Bool = false) -> some View {
-        VStack(spacing: 10) {
-            // Icon
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundColor(color)
-            
-            // Amount
-            Text("$\(Int(abs(amount)))")
-                .font(.title3)
-                .fontWeight(.bold)
-                .foregroundColor(amount >= 0 ? AppTheme.textColor : AppTheme.expenseColor)
-            
-            // Title
-            Text(title)
-                .font(.caption)
-                .foregroundColor(AppTheme.textColor.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(AppTheme.cardBackground)
-        .overlay(
-            showBorder ? Rectangle()
-                .frame(width: 1)
-                .foregroundColor(AppTheme.cardStroke)
-                .padding(.vertical, 10)
-                .position(x: UIScreen.main.bounds.width / 2, y: 0) : nil
-        )
-    }
-    
     // Empty budget categories view
     private var noBudgetCategoriesView: some View {
         VStack(spacing: 24) {
@@ -587,6 +581,81 @@ struct BudgetPlannerView: View {
         )
     }
     
+    // Categories list view
+    private func categoriesListView(categories: [BudgetCategory]) -> some View {
+        VStack(spacing: 16) {
+            ForEach(categories) { category in
+                BudgetCategoryRow(
+                    category: category,
+                    spent: calculateSpentForCategory(category),
+                    onTap: {
+                        selectedCategory = category
+                    },
+                    onAmountChange: { newAmount in
+                        updateCategoryAmount(category, newAmount)
+                    },
+                    onDelete: { deleteCategory(category) }
+                )
+                .padding(.horizontal)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+                .id("category-row-\(category.id)-\(calculateSpentForCategory(category))")
+            }
+        }
+    }
+    
+    // Budget stat column
+    private func budgetStatColumn(title: String, amount: Double, icon: String, color: Color, showBorder: Bool = false) -> some View {
+        VStack(spacing: 10) {
+            // Icon
+            Image(systemName: icon)
+                .font(.system(size: 24))
+                .foregroundColor(color)
+            
+            // Amount - ensure we show the correct amount
+            Text("$\(Int(abs(amount)))")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(amount >= 0 ? AppTheme.textColor : AppTheme.expenseColor)
+                .id("budget-\(title)-\(amount)") // Force refresh when amount changes
+            
+            // Title
+            Text(title)
+                .font(.caption)
+                .foregroundColor(AppTheme.textColor.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(AppTheme.cardBackground)
+        .overlay(
+            showBorder ? Rectangle()
+                .frame(width: 1)
+                .foregroundColor(AppTheme.cardStroke)
+                .padding(.vertical, 10)
+                .position(x: UIScreen.main.bounds.width / 3, y: 0) : nil
+        )
+    }
+    
+    // MARK: - Refresh Budget Data
+    
+    private func refreshBudgetData() {
+        isRefreshing = true
+        
+        // Reload transactions from Plaid
+        plaidManager.fetchTransactionsWithSync { success in
+            DispatchQueue.main.async {
+                // Recalculate category spending
+                self.calculateCategorySpending()
+                
+                // Refresh UI
+                self.isRefreshing = false
+                
+                // Log refreshed values
+                print("DEBUG: Budget values after refresh:")
+                self.logBudgetValues()
+            }
+        }
+    }
+    
     // MARK: - Initialize Data
     
     // Initialize data
@@ -597,12 +666,33 @@ struct BudgetPlannerView: View {
         // Load all budget categories
         loadBudgetCategories()
         
-        // Calculate spending for each category
-        calculateCategorySpending()
+        // Reset Auto Budget availability if last run was on a different day
+        checkAndResetAutoBudget()
         
-        // Turn off loading state
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            isLoading = false
+        // Wait for both income and categories to load before calculating spending
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            // Calculate spending for each category
+            self.calculateCategorySpending()
+            
+            // Turn off loading state after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                self.isLoading = false
+                
+                // Log budget values for debugging
+                self.logBudgetValues()
+            }
+        }
+    }
+    
+    // Check if Auto Budget should be reset (new day)
+    private func checkAndResetAutoBudget() {
+        let currentDate = Date()
+        let lastDate = Date(timeIntervalSince1970: lastAutobudgetDate)
+        
+        // Check if the dates are from different days
+        if !Calendar.current.isDate(lastDate, inSameDayAs: currentDate) {
+            // Reset Auto Budget if it's a new day
+            isAutobudgetRunning = false
         }
     }
     
@@ -655,10 +745,36 @@ struct BudgetPlannerView: View {
         let calculatedIncome = abs(incomeTransactions.reduce(0) { $0 + $1.amount })
         
         if calculatedIncome > 0 {
-            monthlyIncome = calculatedIncome
+            self.monthlyIncome = calculatedIncome
+            print("DEBUG: Set monthly income from transactions to $\(calculatedIncome)")
         } else {
             // Set default value for demo purposes
-            monthlyIncome = 5000
+            self.monthlyIncome = 5000
+            print("DEBUG: Set default monthly income to $5000")
+        }
+        
+        // Save the income to Firestore to ensure persistence
+        saveMonthlyIncome(self.monthlyIncome)
+    }
+    
+    // Save monthly income to Firestore
+    private func saveMonthlyIncome(_ income: Double) {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            return
+        }
+        
+        let db = Firestore.firestore()
+        let userRef = db.collection("users").document(userId)
+        
+        userRef.updateData([
+            "monthlyIncome": income,
+            "updatedAt": FieldValue.serverTimestamp()
+        ]) { error in
+            if let error = error {
+                print("DEBUG: Error saving monthly income: \(error.localizedDescription)")
+            } else {
+                print("DEBUG: Successfully saved monthly income of $\(income) to Firestore")
+            }
         }
     }
 
@@ -702,14 +818,11 @@ struct BudgetPlannerView: View {
                 }
                 
                 self.categories = loadedCategories
-                self.isLoading = false
-            } else {
-                self.isLoading = false
             }
         }
     }
     
-    // Calculate spending for each category
+    // Calculate spending for each category - FIXED to match categories correctly
     private func calculateCategorySpending() {
         let calendar = Calendar.current
         let now = Date()
@@ -718,6 +831,11 @@ struct BudgetPlannerView: View {
         
         var spending: [String: Double] = [:]
         
+        // Pre-initialize all budget categories with zero spending
+        for category in categories {
+            spending[category.name] = 0.0
+        }
+        
         // Get transactions for current month
         let monthTransactions = plaidManager.transactions.filter { transaction in
             let transactionMonth = calendar.component(.month, from: transaction.date)
@@ -725,17 +843,476 @@ struct BudgetPlannerView: View {
             return transactionMonth == currentMonth && transactionYear == currentYear && transaction.amount > 0
         }
         
-        // Group by category
+        print("DEBUG: Found \(monthTransactions.count) transactions for current month")
+        
+        // Get all unique Plaid transaction categories
+        var plaidCategories = Set<String>()
         for transaction in monthTransactions {
-            spending[transaction.category, default: 0] += transaction.amount
+            plaidCategories.insert(transaction.category)
         }
         
-        categorySpending = spending
+        print("DEBUG: Unique Plaid transaction categories: \(plaidCategories.sorted())")
+        
+        // Map transactions directly to categories
+        for transaction in monthTransactions {
+            // Find exact match first
+            if let exactMatch = categories.first(where: { $0.name == transaction.category }) {
+                spending[exactMatch.name, default: 0] += transaction.amount
+                print("DEBUG: Direct match: '\(transaction.merchantName)' ($\(transaction.amount)) → '\(exactMatch.name)'")
+            }
+            // Try case-insensitive match
+            else if let caseInsensitiveMatch = categories.first(where: {
+                $0.name.lowercased() == transaction.category.lowercased()
+            }) {
+                spending[caseInsensitiveMatch.name, default: 0] += transaction.amount
+                print("DEBUG: Case-insensitive match: '\(transaction.merchantName)' ($\(transaction.amount)) → '\(caseInsensitiveMatch.name)'")
+            }
+            // No match found - need to handle this transaction
+            else {
+                handleUnmatchedTransaction(transaction, spending: &spending)
+            }
+        }
+        
+        self.categorySpending = spending
+        
+        // Log the spending mapping for debugging
+        print("DEBUG: Final category spending mapping:")
+        for (category, amount) in spending {
+            print("DEBUG: Category '\(category)': $\(amount)")
+        }
+    }
+
+    // Handles transactions that don't have a direct category match
+    private func handleUnmatchedTransaction(_ transaction: PlaidTransaction, spending: inout [String: Double]) {
+        let transactionCategory = transaction.category
+        let merchantName = transaction.merchantName
+        
+        // If we have an "Other" or "Miscellaneous" category, use it
+        if let otherCategory = categories.first(where: {
+            $0.name == "Other" || $0.name == "Miscellaneous"
+        }) {
+            spending[otherCategory.name, default: 0] += transaction.amount
+            print("DEBUG: Unmatched transaction '\(merchantName)' ($\(transaction.amount)) added to '\(otherCategory.name)'")
+            return
+        }
+        
+        // Try to find the most similar category based on substrings
+        var bestMatch: BudgetCategory? = nil
+        var bestMatchScore = 0
+        
+        for category in categories {
+            var score = 0
+            
+            // Check if transaction category contains budget category name
+            if transactionCategory.lowercased().contains(category.name.lowercased()) {
+                score += 5
+            }
+            
+            // Check if budget category name contains transaction category
+            if category.name.lowercased().contains(transactionCategory.lowercased()) {
+                score += 5
+            }
+            
+            // Check if merchant name matches category
+            if merchantName.lowercased().contains(category.name.lowercased()) {
+                score += 3
+            }
+            
+            if score > bestMatchScore {
+                bestMatchScore = score
+                bestMatch = category
+            }
+        }
+        
+        if let match = bestMatch, bestMatchScore > 0 {
+            spending[match.name, default: 0] += transaction.amount
+            print("DEBUG: Fuzzy match: '\(merchantName)' ($\(transaction.amount)) → '\(match.name)' (score: \(bestMatchScore))")
+        } else {
+            // Last resort: add to the largest budget category
+            let largestCategory = categories.max(by: { $0.amount < $1.amount })
+            if let category = largestCategory {
+                spending[category.name, default: 0] += transaction.amount
+                print("DEBUG: Fallback match: '\(merchantName)' ($\(transaction.amount)) → '\(category.name)' (largest category)")
+            }
+        }
+    }
+
+    // MARK: - Auto Category Creation from Plaid Data
+
+    // This function can be called to automatically create budget categories from actual Plaid transactions
+    func createBudgetCategoriesFromPlaidTransactions() {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            errorMessage = "User not logged in"
+            return
+        }
+        
+        // Set auto-budget running state
+        isAutobudgetRunning = true
+        
+        // Get unique transaction categories from Plaid
+        let plaidTransactionCategories = getUniquePlaidCategories()
+        
+        // Check if we have categories to create
+        if plaidTransactionCategories.isEmpty {
+            errorMessage = "No transaction categories found in your Plaid data"
+            isAutobudgetRunning = false
+            return
+        }
+        
+        // Target percentages based on typical spending patterns
+        // These will be distributed among the available categories proportionally
+        var targetPercentages: [String: Double] = [
+            "Food and Drink": 0.15,
+            "Groceries": 0.10,
+            "General Merchandise": 0.10,
+            "Travel": 0.05,
+            "Home Improvement": 0.05,
+            "Entertainment": 0.05,
+            "Restaurants": 0.08,
+            "Transportation": 0.07,
+            "Utilities": 0.06,
+            "Housing": 0.20,
+            "Healthcare": 0.05,
+            "Service": 0.04
+            // Default other categories will get equal share of remaining percentage
+        ]
+        
+        // Total allocated percentage
+        let totalAllocatedPercentage = targetPercentages.values.reduce(0, +)
+        
+        // Default percentage for categories not explicitly defined
+        let defaultPercentage = (1.0 - totalAllocatedPercentage) / Double(max(1, plaidTransactionCategories.count - targetPercentages.count))
+        
+        print("DEBUG: Creating budget categories from \(plaidTransactionCategories.count) Plaid categories")
+        
+        let db = Firestore.firestore()
+        let batch = db.batch()
+        
+        // Track new categories to be added
+        var newCategories: [BudgetCategory] = []
+        
+        // Check which categories already exist
+        let existingCategoryNames = categories.map { $0.name }
+        
+        for categoryName in plaidTransactionCategories {
+            // Skip if category already exists
+            if existingCategoryNames.contains(categoryName) {
+                continue
+            }
+            
+            // Determine icon and color based on category name
+            let (icon, color) = getIconAndColor(for: categoryName)
+            
+            // Determine budget percentage
+            let percentage = targetPercentages[categoryName] ?? defaultPercentage
+            let budgetAmount = monthlyIncome * percentage
+            
+            // Create document reference
+            let categoryRef = db.collection("users/\(userId)/budgetCategories").document()
+            
+            let categoryData: [String: Any] = [
+                "name": categoryName,
+                "amount": budgetAmount,
+                "icon": icon,
+                "color": color.hexString,
+                "isEssential": CategoryDetailView.isEssentialCategory(categoryName),
+                "updatedAt": FieldValue.serverTimestamp()
+            ]
+            
+            batch.setData(categoryData, forDocument: categoryRef)
+            
+            // Create local category object
+            let newCategory = BudgetCategory(
+                id: categoryRef.documentID,
+                name: categoryName,
+                amount: budgetAmount,
+                icon: icon,
+                color: color
+            )
+            
+            newCategories.append(newCategory)
+        }
+        
+        // Commit all the changes
+        batch.commit { error in
+            DispatchQueue.main.async {
+                self.isAutobudgetRunning = false
+                
+                if let error = error {
+                    self.errorMessage = "Error creating categories: \(error.localizedDescription)"
+                } else {
+                    // Add new categories to our local array
+                    if !newCategories.isEmpty {
+                        withAnimation {
+                            self.categories.append(contentsOf: newCategories)
+                        }
+                        
+                        self.successMessage = "Created \(newCategories.count) budget categories from your transaction data"
+                        self.showSuccessMessage = true
+                        
+                        // Recalculate category spending
+                        self.calculateCategorySpending()
+                    } else {
+                        self.errorMessage = "No new categories needed - all transaction categories are already set up"
+                    }
+                }
+            }
+        }
+    }
+
+    // Get unique transaction categories from Plaid
+    private func getUniquePlaidCategories() -> [String] {
+        // Get all transactions
+        let transactions = plaidManager.transactions
+        
+        // Extract unique categories
+        var uniqueCategories = Set<String>()
+        for transaction in transactions {
+            if !transaction.category.isEmpty {
+                uniqueCategories.insert(transaction.category)
+            }
+        }
+        
+        return Array(uniqueCategories)
+    }
+
+    // Helper to determine icon and color for a given category
+    private func getIconAndColor(for categoryName: String) -> (String, Color) {
+        let categoryLower = categoryName.lowercased()
+        
+        // Shopping/retail
+        if categoryLower.contains("shop") || categoryLower.contains("merchandise") {
+            return ("cart.fill", AppTheme.accentBlue)
+        }
+        // Food
+        else if categoryLower.contains("food") || categoryLower.contains("restaurant") || categoryLower.contains("groceries") {
+            return ("fork.knife", Color(hex: "#FF8C00"))
+        }
+        // Housing/utilities
+        else if categoryLower.contains("home") || categoryLower.contains("house") || categoryLower.contains("mortgage") || categoryLower.contains("rent") {
+            return ("house.fill", AppTheme.primaryGreen)
+        }
+        // Utilities
+        else if categoryLower.contains("utilities") || categoryLower.contains("bill") {
+            return ("bolt.fill", Color(hex: "#9370DB"))
+        }
+        // Transportation
+        else if categoryLower.contains("transport") || categoryLower.contains("travel") || categoryLower.contains("gas") {
+            return ("car.fill", AppTheme.accentPurple)
+        }
+        // Healthcare
+        else if categoryLower.contains("health") || categoryLower.contains("medical") {
+            return ("heart.fill", Color(hex: "#FF5757"))
+        }
+        // Entertainment
+        else if categoryLower.contains("entertainment") || categoryLower.contains("recreation") {
+            return ("play.tv", Color(hex: "#FFD700"))
+        }
+        // Education
+        else if categoryLower.contains("education") || categoryLower.contains("school") {
+            return ("book.fill", Color(hex: "#4682B4"))
+        }
+        // Personal care
+        else if categoryLower.contains("personal") || categoryLower.contains("beauty") {
+            return ("person.fill", Color(hex: "#FF7F50"))
+        }
+        // Financial
+        else if categoryLower.contains("finance") || categoryLower.contains("bank") || categoryLower.contains("invest") {
+            return ("dollarsign.circle.fill", Color(hex: "#50C878"))
+        }
+        // Debt
+        else if categoryLower.contains("debt") || categoryLower.contains("loan") || categoryLower.contains("credit") {
+            return ("creditcard.fill", Color(hex: "#20B2AA"))
+        }
+        // Default
+        else {
+            return ("tag.fill", Color(hex: "#BA55D3"))
+        }
+    }
+
+    // Compute a hash color from a string (for consistent category colors)
+    private func hashColor(from string: String) -> Color {
+        let hash = abs(string.hashValue)
+        let hue = Double(hash % 256) / 256.0
+        return Color(hue: hue, saturation: 0.7, brightness: 0.9)
+    }
+    
+    private func findBestCategoryMatch(for transaction: PlaidTransaction) -> String {
+        // Check if we have an "Other" category defined
+        if let otherCategory = categories.first(where: { $0.name == "Other" }) {
+            return otherCategory.name
+        }
+        
+        // Try to find a category based on transaction name and merchant name keywords
+        let transactionCategory = transaction.category.lowercased()
+        let merchantName = transaction.merchantName.lowercased()
+        
+        // Define keyword mappings to categories
+        let keywordMappings: [(keywords: [String], categoryType: String)] = [
+            (["grocery", "food", "supermarket", "market"], "Groceries"),
+            (["restaurant", "dining", "cafe", "coffee", "food service"], "Dining Out"),
+            (["transport", "uber", "lyft", "taxi", "train", "transit", "gas", "fuel"], "Transportation"),
+            (["utility", "electric", "gas", "water", "internet", "phone", "bill"], "Utilities"),
+            (["entertainment", "movie", "netflix", "spotify", "streaming", "game"], "Entertainment"),
+            (["shopping", "retail", "amazon", "walmart", "target"], "Shopping"),
+            (["health", "doctor", "medical", "pharmacy", "hospital", "clinic"], "Healthcare"),
+            (["rent", "mortgage", "housing", "apartment", "condo"], "Housing"),
+            (["subscription", "membership"], "Subscriptions"),
+            (["personal care", "beauty", "haircut", "salon", "spa"], "Personal Care"),
+            (["education", "school", "tuition", "book", "course"], "Education"),
+            (["save", "saving", "investment"], "Savings"),
+            (["debt", "loan", "credit card", "payment"], "Debt Repayment")
+        ]
+        
+        // Check for keyword matches
+        for (keywords, categoryType) in keywordMappings {
+            for keyword in keywords {
+                if transactionCategory.contains(keyword) || merchantName.contains(keyword) {
+                    // Try to find the matching category in our budget categories
+                    if let matchingCategory = categories.first(where: {
+                        $0.name.lowercased().contains(categoryType.lowercased())
+                    }) {
+                        return matchingCategory.name
+                    }
+                }
+            }
+        }
+        
+        // If we couldn't find a match and don't have an "Other" category,
+        // return the first category as a fallback
+        return categories.first?.name ?? "Uncategorized"
+    }
+
+    
+    // Assign a transaction to the closest matching category based on keywords
+    private func assignTransactionToClosestCategory(_ transaction: PlaidTransaction, spending: inout [String: Double]) {
+        let transactionCategory = transaction.category.lowercased()
+        let merchantName = transaction.merchantName.lowercased()
+        
+        // Category matching logic - check if any of our budget categories match this transaction
+        var bestMatch: String? = nil
+        var bestScore = 0
+        
+        for category in categories {
+            let categoryName = category.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            var score = 0
+            
+            // Exact category match
+            if transactionCategory == categoryName {
+                score += 100
+            }
+            // Contains category name
+            else if transactionCategory.contains(categoryName) {
+                score += 50
+            }
+            // Merchant name contains category name
+            else if merchantName.contains(categoryName) {
+                score += 25
+            }
+            
+            // Additional keyword matching for common categories
+            if categoryName == "groceries" && (
+                transactionCategory.contains("groceries") ||
+                transactionCategory.contains("supermarket") ||
+                merchantName.contains("food") ||
+                merchantName.contains("market") ||
+                merchantName.contains("grocery")
+            ) {
+                score += 40
+            } else if categoryName == "dining out" && (
+                transactionCategory.contains("restaurant") ||
+                transactionCategory.contains("food") ||
+                transactionCategory.contains("dining") ||
+                merchantName.contains("restaurant") ||
+                merchantName.contains("cafe") ||
+                merchantName.contains("coffee")
+            ) {
+                score += 40
+            } else if categoryName == "transportation" && (
+                transactionCategory.contains("travel") ||
+                transactionCategory.contains("transit") ||
+                transactionCategory.contains("uber") ||
+                transactionCategory.contains("lyft") ||
+                transactionCategory.contains("taxi") ||
+                merchantName.contains("gas") ||
+                merchantName.contains("transit") ||
+                merchantName.contains("uber") ||
+                merchantName.contains("lyft")
+            ) {
+                score += 40
+            } else if categoryName == "utilities" && (
+                transactionCategory.contains("utilities") ||
+                transactionCategory.contains("bill") ||
+                merchantName.contains("electric") ||
+                merchantName.contains("gas") ||
+                merchantName.contains("water") ||
+                merchantName.contains("internet") ||
+                merchantName.contains("phone")
+            ) {
+                score += 40
+            } else if categoryName == "entertainment" && (
+                transactionCategory.contains("entertainment") ||
+                transactionCategory.contains("recreation") ||
+                merchantName.contains("netflix") ||
+                merchantName.contains("spotify") ||
+                merchantName.contains("movie") ||
+                merchantName.contains("theater") ||
+                merchantName.contains("cinema")
+            ) {
+                score += 40
+            } else if categoryName == "shopping" && (
+                transactionCategory.contains("shopping") ||
+                transactionCategory.contains("retail") ||
+                merchantName.contains("amazon") ||
+                merchantName.contains("walmart") ||
+                merchantName.contains("target")
+            ) {
+                score += 40
+            } else if categoryName == "healthcare" && (
+                transactionCategory.contains("health") ||
+                transactionCategory.contains("medical") ||
+                transactionCategory.contains("pharmacy") ||
+                merchantName.contains("clinic") ||
+                merchantName.contains("doctor") ||
+                merchantName.contains("pharmacy") ||
+                merchantName.contains("hospital")
+            ) {
+                score += 40
+            } else if categoryName == "housing" && (
+                transactionCategory.contains("housing") ||
+                transactionCategory.contains("rent") ||
+                transactionCategory.contains("mortgage") ||
+                merchantName.contains("apartment") ||
+                merchantName.contains("rent") ||
+                merchantName.contains("mortgage")
+            ) {
+                score += 40
+            }
+            
+            if score > bestScore {
+                bestScore = score
+                bestMatch = categoryName
+            }
+        }
+        
+        // If we found a match with a reasonable score, assign transaction to that category
+        if let categoryName = bestMatch, bestScore >= 20 {
+            // Find the original category name with proper case
+            if let matchedCategory = categories.first(where: { $0.name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == categoryName }) {
+                let originalName = matchedCategory.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                spending[originalName, default: 0] += transaction.amount
+            }
+        } else {
+            // Add to "Other" or a general category if no good match found
+            let otherCategory = "Other"
+            spending[otherCategory, default: 0] += transaction.amount
+        }
     }
     
     // Calculate spent amount for a specific category
     private func calculateSpentForCategory(_ category: BudgetCategory) -> Double {
-        return categorySpending[category.name] ?? 0.0
+        let categoryName = category.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return categorySpending[categoryName] ?? 0.0
     }
     
     // Add a new budget category
@@ -788,6 +1365,9 @@ struct BudgetPlannerView: View {
             withAnimation {
                 self.categories.append(newCategory)
             }
+            
+            // Recalculate spending to include the new category
+            self.calculateCategorySpending()
         }
     }
     
@@ -825,6 +1405,9 @@ struct BudgetPlannerView: View {
                     self.categories[index] = category
                 }
             }
+            
+            // Recalculate category spending
+            self.calculateCategorySpending()
         }
     }
     
@@ -878,6 +1461,9 @@ struct BudgetPlannerView: View {
             // Remove from local array
             withAnimation {
                 self.categories.removeAll { $0.id == category.id }
+                
+                // Also remove from category spending map
+                self.categorySpending.removeValue(forKey: category.name.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
     }
@@ -886,11 +1472,11 @@ struct BudgetPlannerView: View {
     
     // Auto budget function
     func autoBudget() {
-        // Prevent multiple uses of auto budget
-        if hasUsedAutoBudget {
-            errorMessage = "You've already used Auto Budget. You can manually edit categories instead."
-            return
-        }
+        // Set auto-budget running state
+        isAutobudgetRunning = true
+        
+        // Record when Auto Budget was last run
+        lastAutobudgetDate = Date().timeIntervalSince1970
         
         // First verify we have income amount
         if monthlyIncome <= 0 {
@@ -899,13 +1485,18 @@ struct BudgetPlannerView: View {
             if monthlyIncome <= 0 {
                 monthlyIncome = 5000 // Set default for testing
                 errorMessage = "Using a default monthly income of $5,000 for budget calculation."
+                isAutobudgetRunning = false
                 return
             }
         }
         
+        // Debug budget before auto-budget
+        print("DEBUG: Budget values BEFORE auto-budget:")
+        logBudgetValues()
+        
         isLoading = true
         
-        // Define default categories
+        // Define default categories using the 50/30/20 rule
         let defaultCategories = [
             // Needs (50%)
             ("Housing", "house.fill", AppTheme.primaryGreen, 0.25, true),  // 25% of income
@@ -929,22 +1520,24 @@ struct BudgetPlannerView: View {
         guard let userId = Auth.auth().currentUser?.uid else {
             errorMessage = "User not logged in"
             isLoading = false
+            isAutobudgetRunning = false
             return
         }
         
         let db = Firestore.firestore()
         
-        // First, get all existing categories to identify which to update vs. create
+        // Get all existing categories to identify which to update vs. create
         db.collection("users/\(userId)/budgetCategories").getDocuments { [self] snapshot, error in
             if let error = error {
                 self.errorMessage = "Error fetching categories: \(error.localizedDescription)"
                 self.isLoading = false
+                self.isAutobudgetRunning = false
                 return
             }
             
             // Dictionary to track existing categories by name
             var existingCategoriesById: [String: BudgetCategory] = [:]
-            var existingCategoriesByName: [String: BudgetCategory] = [:]
+            var existingCategoriesByName: [String: (BudgetCategory, String)] = [:]
             
             if let documents = snapshot?.documents {
                 for document in documents {
@@ -952,6 +1545,8 @@ struct BudgetPlannerView: View {
                        let amount = document.data()["amount"] as? Double,
                        let icon = document.data()["icon"] as? String,
                        let colorHex = document.data()["color"] as? String {
+                        
+                        let normalizedName = name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
                         
                         let category = BudgetCategory(
                             id: document.documentID,
@@ -962,7 +1557,7 @@ struct BudgetPlannerView: View {
                         )
                         
                         existingCategoriesById[document.documentID] = category
-                        existingCategoriesByName[name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)] = category
+                        existingCategoriesByName[normalizedName] = (category, document.documentID)
                     }
                 }
             }
@@ -980,9 +1575,9 @@ struct BudgetPlannerView: View {
                 let budgetAmount = monthlyIncome * percentage
                 
                 // Check if this category already exists (by normalized name)
-                if let existingCategory = existingCategoriesByName[categoryNameLowercased] {
+                if let (existingCategory, docId) = existingCategoriesByName[categoryNameLowercased] {
                     // Update existing category with new amount but keep other properties
-                    let categoryRef = db.collection("users/\(userId)/budgetCategories").document(existingCategory.id)
+                    let categoryRef = db.collection("users/\(userId)/budgetCategories").document(docId)
                     
                     batch.updateData([
                         "amount": budgetAmount,
@@ -1025,6 +1620,7 @@ struct BudgetPlannerView: View {
             batch.commit { error in
                 DispatchQueue.main.async {
                     self.isLoading = false
+                    self.isAutobudgetRunning = false
                     
                     if let error = error {
                         self.errorMessage = "Error updating budget: \(error.localizedDescription)"
@@ -1043,15 +1639,16 @@ struct BudgetPlannerView: View {
                     // Then add new categories
                     self.categories.append(contentsOf: newCategoriesToAdd)
                     
-                    // Mark that auto budget has been used
-                    self.hasUsedAutoBudget = true
-                    
                     // Show success message
                     self.successMessage = "Budget has been optimized with the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings & debt repayment."
                     self.showSuccessMessage = true
                     
                     // Update budget usage
                     self.calculateCategorySpending()
+                    
+                    // Debug budget after auto-budget
+                    print("DEBUG: Budget values AFTER auto-budget:")
+                    self.logBudgetValues()
                 }
             }
         }
@@ -1103,11 +1700,13 @@ struct BudgetPlannerView: View {
 
 // MARK: - Supporting Types
 
+// Alert data for error handling
 struct AlertData: Identifiable {
     var id: String
     var message: String
 }
 
+// Budget status types
 enum BudgetStatus {
     case overBudget
     case warning
@@ -1115,7 +1714,7 @@ enum BudgetStatus {
     case underBudget
 }
 
-
+// Button style with scale animation
 struct ScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

@@ -10,6 +10,9 @@ struct InsightsView: View {
     @State private var isRefreshing = false
     @State private var selectedCategoryIndex: Int? = nil
     @State private var selectedTransaction: PlaidTransaction? = nil
+    @State private var showIncomeCategories = false // Toggle between expense and income categories
+    @State private var showIncomeSourceDetail: String? = nil // Selected income source for detail view
+    @State private var selectedCategoryForDetail: CategoryDetailInfo? = nil // Selected category for detail view
     
     // Tab options
     let tabs = ["Overview", "Spending", "Income", "Categories"]
@@ -73,6 +76,21 @@ struct InsightsView: View {
             .sorted { $0.1 > $1.1 }
     }
     
+    // Income category breakdown
+    private var incomeCategoryBreakdown: [(String, Double)] {
+        // Group transactions by category and sum amounts
+        var categories: [String: Double] = [:]
+        
+        for transaction in incomeTransactions {
+            let category = transaction.category
+            categories[category, default: 0] += abs(transaction.amount)
+        }
+        
+        // Convert to array and sort by amount (highest first)
+        return categories.map { ($0.key, $0.value) }
+            .sorted { $0.1 > $1.1 }
+    }
+    
     // Top vendors calculation
     private var topVendors: [(String, Double)] {
         // Group expense transactions by vendor and sum amounts
@@ -115,6 +133,68 @@ struct InsightsView: View {
         
         return sources.map { ($0.key, $0.value) }
             .sorted { $0.1 > $1.1 }
+    }
+    
+    // Monthly income trend data
+    private var monthlyIncomeTrend: [(String, Double)] {
+        let calendar = Calendar.current
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM"
+        
+        var monthlyData: [String: Double] = [:]
+        
+        // Get last 6 months
+        let currentDate = Date()
+        for i in 0..<6 {
+            if let date = calendar.date(byAdding: .month, value: -i, to: currentDate) {
+                let monthString = dateFormatter.string(from: date)
+                monthlyData[monthString] = 0
+            }
+        }
+        
+        // Sum income by month
+        for transaction in plaidManager.transactions.filter({ $0.amount < 0 }) {
+            let monthString = dateFormatter.string(from: transaction.date)
+            if monthlyData[monthString] != nil {
+                monthlyData[monthString]! += abs(transaction.amount)
+            }
+        }
+        
+        // Convert to array and sort by date
+        let monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        let now = Date()
+        let currentMonth = dateFormatter.string(from: now)
+        let currentMonthIndex = monthOrder.firstIndex(of: currentMonth) ?? 0
+        
+        var sortedMonths: [String] = []
+        for i in 0..<6 {
+            let index = (currentMonthIndex - i + 12) % 12
+            sortedMonths.append(monthOrder[index])
+        }
+        
+        return sortedMonths.reversed().compactMap { month in
+            if let amount = monthlyData[month] {
+                return (month, amount)
+            }
+            return nil
+        }
+    }
+    
+    // Get transactions for specific income source
+    private func transactionsForIncomeSource(_ source: String) -> [PlaidTransaction] {
+        return incomeTransactions.filter {
+            let merchant = $0.merchantName.isEmpty ? "Primary Income" : $0.merchantName
+            return merchant == source
+        }
+    }
+    
+    // Get transactions for a specific category
+    private func transactionsForCategory(_ category: String, isIncome: Bool) -> [PlaidTransaction] {
+        if isIncome {
+            return incomeTransactions.filter { $0.category == category }
+        } else {
+            return expenseTransactions.filter { $0.category == category }
+        }
     }
     
     var body: some View {
@@ -174,6 +254,15 @@ struct InsightsView: View {
         .sheet(item: $selectedTransaction) { transaction in
             TransactionDetailViewFirestore(transaction: transaction)
                 .environmentObject(plaidManager)
+        }
+        .sheet(item: Binding(
+            get: { showIncomeSourceDetail.map { IncomeSourceDetail(name: $0) } },
+            set: { showIncomeSourceDetail = $0?.name }
+        )) { detail in
+            incomeSourceDetailView(for: detail.name)
+        }
+        .sheet(item: $selectedCategoryForDetail) { categoryDetail in
+            categoryDetailView(for: categoryDetail.name, isIncome: categoryDetail.isIncome)
         }
         .navigationTitle("Insights")
         .navigationBarTitleDisplayMode(.inline)
@@ -327,6 +416,76 @@ struct InsightsView: View {
     }
     
     // MARK: - Tab Content
+    // Category Pie Chart for Overview Tab
+    private var categoryPieChartCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Spending by Category")
+                .font(.headline)
+                .foregroundColor(AppTheme.textColor)
+            
+            if categoryBreakdown.isEmpty {
+                Text("No category data for this period")
+                    .font(.subheadline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    .frame(height: 200)
+                    .frame(maxWidth: .infinity)
+            } else {
+                // Convert category breakdown data to the format needed for PieChartView
+                let chartData = categoryBreakdown.map { (name, amount) in
+                    return (name, amount)
+                }
+                
+                // Use the Swift Charts-based PieChartView
+                PieChartView(data: chartData)
+                    .frame(height: 250)
+                    .padding(.vertical, 8)
+                
+                // Add category legend below the chart
+                ScrollView {
+                    VStack(spacing: 12) {
+                        ForEach(chartData.prefix(5), id: \.0) { category, amount in
+                            Button(action: {
+                                // Show transactions for this category
+                                selectedCategoryForDetail = CategoryDetailInfo(
+                                    name: category,
+                                    isIncome: false
+                                )
+                            }) {
+                                HStack(spacing: 10) {
+                                    Circle()
+                                        .fill(categoryColor(for: category))
+                                        .frame(width: 12, height: 12)
+                                    
+                                    Text(category)
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor)
+                                    
+                                    Spacer()
+                                    
+                                    Text("$\(amount, specifier: "%.0f")")
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor)
+                                    
+                                    Text("(\(Int(amount / totalSpending * 100))%)")
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(12)
+                }
+                .frame(maxHeight: 200)
+            }
+        }
+        .padding()
+        .background(AppTheme.cardBackground.opacity(0.3))
+        .cornerRadius(20)
+    }
     
     // Overview tab content
     private var overviewTabContent: some View {
@@ -335,12 +494,16 @@ struct InsightsView: View {
             financialSnapshotCard
                 .padding(.horizontal)
             
+            // Category breakdown pie chart (moved from categories tab)
+            categoryPieChartCard
+                .padding(.horizontal)
+            
             // Top spending categories
             topSpendingCategoriesCard
                 .padding(.horizontal)
             
-            // Top spending vendors card (replacing Savings Insights)
-            topVendorsCard
+            // Income Sources Breakdown
+            topIncomeSourcesCard
                 .padding(.horizontal)
         }
     }
@@ -352,8 +515,8 @@ struct InsightsView: View {
             spendingSummaryCard
                 .padding(.horizontal)
             
-            // Category breakdown card - now with actual pie chart
-            categoryBreakdownCard
+            // Top vendors
+            topVendorsCard
                 .padding(.horizontal)
             
             // Recent transactions list
@@ -369,8 +532,16 @@ struct InsightsView: View {
             incomeSummaryCard
                 .padding(.horizontal)
             
+            // Income Over Time Card (NEW)
+            incomeOverTimeCard
+                .padding(.horizontal)
+            
             // Income distribution - showing actual Plaid data
             enhancedIncomeDistributionCard
+                .padding(.horizontal)
+            
+            // Income transactions
+            incomeTransactionsCard
                 .padding(.horizontal)
         }
     }
@@ -378,17 +549,58 @@ struct InsightsView: View {
     // Categories tab content
     private var categoriesTabContent: some View {
         VStack(spacing: 16) {
-            if !categoryBreakdown.isEmpty {
-                // Show categories
-                ForEach(categoryBreakdown, id: \.0) { category, amount in
-                    categoryCard(name: category, amount: amount)
-                        .padding(.horizontal)
+            // Toggle between expense and income categories
+            Picker("Category Type", selection: $showIncomeCategories) {
+                Text("Expenses").tag(false)
+                Text("Income").tag(true)
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding(.horizontal)
+            
+            if showIncomeCategories {
+                // Show income categories
+                if incomeCategoryBreakdown.isEmpty {
+                    Text("No income categories found for \(timeframeTitle.lowercased())")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                        .padding()
+                } else {
+                    ForEach(incomeCategoryBreakdown, id: \.0) { category, amount in
+                        Button(action: {
+                            // Show transactions for this income category
+                            selectedCategoryForDetail = CategoryDetailInfo(
+                                name: category,
+                                isIncome: true
+                            )
+                        }) {
+                            categoryCard(name: category, amount: amount, isIncome: true)
+                                .padding(.horizontal)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
                 }
             } else {
-                Text("No categories found for \(timeframeTitle.lowercased())")
-                    .font(.headline)
-                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    .padding()
+                // Show expense categories
+                if categoryBreakdown.isEmpty {
+                    Text("No expense categories found for \(timeframeTitle.lowercased())")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                        .padding()
+                } else {
+                    ForEach(categoryBreakdown, id: \.0) { category, amount in
+                        Button(action: {
+                            // Show transactions for this expense category
+                            selectedCategoryForDetail = CategoryDetailInfo(
+                                name: category,
+                                isIncome: false
+                            )
+                        }) {
+                            categoryCard(name: category, amount: amount, isIncome: false)
+                                .padding(.horizontal)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
             }
         }
     }
@@ -457,6 +669,7 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
+
     // Top spending categories card
     private var topSpendingCategoriesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -530,7 +743,101 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
-    // NEW: Top Vendors Card (replacing Savings Insights)
+    // NEW: Top Income Sources Card
+    private var topIncomeSourcesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Income Sources")
+                .font(.headline)
+                .foregroundColor(AppTheme.textColor)
+            
+            if !incomeSources.isEmpty {
+                ForEach(incomeSources.prefix(3), id: \.0) { source, amount in
+                    Button(action: {
+                        // Show detail view for this income source
+                        showIncomeSourceDetail = source
+                    }) {
+                        HStack(alignment: .center, spacing: 12) {
+                            // Source icon
+                            ZStack {
+                                Circle()
+                                    .fill(sourceColor(for: source).opacity(0.2))
+                                    .frame(width: 40, height: 40)
+                                
+                                Image(systemName: sourceIcon(for: source))
+                                    .font(.system(size: 18))
+                                    .foregroundColor(sourceColor(for: source))
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(source)
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                // Progress bar
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .fill(AppTheme.cardBackground)
+                                        .frame(height: 6)
+                                    
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .fill(sourceColor(for: source))
+                                        .frame(width: totalIncome > 0
+                                               ? CGFloat(amount / totalIncome) * 150
+                                               : 0,
+                                               height: 6)
+                                }
+                                .frame(width: 150)
+                            }
+                            
+                            Spacer()
+                            
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text("$\(amount, specifier: "%.0f")")
+                                    .font(.headline)
+                                    .foregroundColor(AppTheme.primaryGreen)
+                                
+                                Text("\(Int(amount / totalIncome * 100))%")
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
+                            }
+                        }
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(12)
+                }
+                
+                // "See All" button if more than 3 sources
+                if incomeSources.count > 3 {
+                    Button(action: {
+                        selectedTab = 2 // Switch to Income tab
+                    }) {
+                        Text("See All Income Sources")
+                            .font(.subheadline)
+                            .foregroundColor(AppTheme.primaryGreen)
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: .infinity)
+                            .background(AppTheme.primaryGreen.opacity(0.1))
+                            .cornerRadius(12)
+                    }
+                }
+            } else {
+                Text("No income data available")
+                    .font(.subheadline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(12)
+            }
+        }
+        .padding()
+        .background(AppTheme.cardBackground.opacity(0.3))
+        .cornerRadius(20)
+    }
+    
+    // Top vendors card
     private var topVendorsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Top Spending Vendors")
@@ -671,26 +978,35 @@ struct InsightsView: View {
                 ScrollView {
                     VStack(spacing: 12) {
                         ForEach(chartData.prefix(5), id: \.0) { category, amount in
-                            HStack(spacing: 10) {
-                                Circle()
-                                    .fill(categoryColor(for: category))
-                                    .frame(width: 12, height: 12)
-                                
-                                Text(category)
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Spacer()
-                                
-                                Text("$\(amount, specifier: "%.0f")")
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Text("(\(Int(amount / totalSpending * 100))%)")
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
+                            Button(action: {
+                                // Show transactions for this category
+                                selectedCategoryForDetail = CategoryDetailInfo(
+                                    name: category,
+                                    isIncome: false
+                                )
+                            }) {
+                                HStack(spacing: 10) {
+                                    Circle()
+                                        .fill(categoryColor(for: category))
+                                        .frame(width: 12, height: 12)
+                                    
+                                    Text(category)
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor)
+                                    
+                                    Spacer()
+                                    
+                                    Text("$\(amount, specifier: "%.0f")")
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor)
+                                    
+                                    Text("(\(Int(amount / totalSpending * 100))%)")
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                }
+                                .padding(.vertical, 4)
                             }
-                            .padding(.vertical, 4)
+                            .buttonStyle(PlainButtonStyle())
                         }
                     }
                     .padding()
@@ -811,6 +1127,53 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
+    // NEW: Income Over Time Card
+    private var incomeOverTimeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Income Over Time")
+                .font(.headline)
+                .foregroundColor(AppTheme.textColor)
+            
+            if monthlyIncomeTrend.isEmpty {
+                Text("No income trend data available")
+                    .font(.subheadline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(12)
+            } else {
+                VStack {
+                    Chart {
+                        ForEach(monthlyIncomeTrend, id: \.0) { item in
+                            BarMark(
+                                x: .value("Month", item.0),
+                                y: .value("Amount", item.1)
+                            )
+                            .foregroundStyle(AppTheme.primaryGreen.gradient)
+                            .cornerRadius(6)
+                        }
+                    }
+                    .frame(height: 200)
+                    .chartYAxis {
+                        AxisMarks(position: .leading) { value in
+                            if let amount = value.as(Double.self) {
+                                AxisValueLabel("$\(Int(amount))")
+                            }
+                            AxisGridLine()
+                        }
+                    }
+                }
+                .padding()
+                .background(AppTheme.cardBackground)
+                .cornerRadius(12)
+            }
+        }
+        .padding()
+        .background(AppTheme.cardBackground.opacity(0.3))
+        .cornerRadius(20)
+    }
+    
     // Enhanced income distribution card
     private var enhancedIncomeDistributionCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -822,55 +1185,65 @@ struct InsightsView: View {
                 // Show actual income sources from Plaid data
                 VStack(spacing: 15) {
                     if !incomeSources.isEmpty {
-                        ForEach(incomeSources.prefix(5), id: \.0) { source, amount in
-                            HStack(spacing: 15) {
-                                // Source icon
-                                ZStack {
-                                    Circle()
-                                        .fill(sourceColor(for: source).opacity(0.2))
-                                        .frame(width: 40, height: 40)
-                                    
-                                    Image(systemName: sourceIcon(for: source))
-                                        .font(.system(size: 18))
-                                        .foregroundColor(sourceColor(for: source))
-                                }
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(source)
-                                        .font(.subheadline)
-                                        .foregroundColor(AppTheme.textColor)
-                                    
-                                    // Progress bar
-                                    ZStack(alignment: .leading) {
-                                        RoundedRectangle(cornerRadius: 5)
-                                            .fill(AppTheme.cardBackground)
-                                            .frame(height: 6)
+                        ForEach(incomeSources, id: \.0) { source, amount in
+                            Button(action: {
+                                // Show detail view for this income source
+                                showIncomeSourceDetail = source
+                            }) {
+                                HStack(spacing: 15) {
+                                    // Source icon
+                                    ZStack {
+                                        Circle()
+                                            .fill(sourceColor(for: source).opacity(0.2))
+                                            .frame(width: 40, height: 40)
                                         
-                                        RoundedRectangle(cornerRadius: 5)
-                                            .fill(sourceColor(for: source))
-                                            .frame(width: totalIncome > 0
-                                                   ? CGFloat(amount / totalIncome) * 150
-                                                   : 0,
-                                                   height: 6)
+                                        Image(systemName: sourceIcon(for: source))
+                                            .font(.system(size: 18))
+                                            .foregroundColor(sourceColor(for: source))
                                     }
-                                    .frame(width: 150)
-                                }
-                                
-                                Spacer()
-                                
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text("$\(amount, specifier: "%.0f")")
-                                        .font(.headline)
-                                        .foregroundColor(AppTheme.textColor)
                                     
-                                    Text("\(Int(amount / totalIncome * 100))%")
-                                        .font(.caption)
-                                        .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(source)
+                                            .font(.subheadline)
+                                            .foregroundColor(AppTheme.textColor)
+                                        
+                                        // Progress bar
+                                        ZStack(alignment: .leading) {
+                                            RoundedRectangle(cornerRadius: 5)
+                                                .fill(AppTheme.cardBackground)
+                                                .frame(height: 6)
+                                            
+                                            RoundedRectangle(cornerRadius: 5)
+                                                .fill(sourceColor(for: source))
+                                                .frame(width: totalIncome > 0
+                                                       ? CGFloat(amount / totalIncome) * 150
+                                                       : 0,
+                                                       height: 6)
+                                        }
+                                        .frame(width: 150)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text("$\(amount, specifier: "%.0f")")
+                                            .font(.headline)
+                                            .foregroundColor(AppTheme.textColor)
+                                        
+                                        Text("\(Int(amount / totalIncome * 100))%")
+                                            .font(.caption)
+                                            .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                    }
                                 }
                             }
+                            .buttonStyle(PlainButtonStyle())
                             .padding()
                             .background(AppTheme.cardBackground)
                             .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(AppTheme.cardStroke, lineWidth: 1)
+                            )
                         }
                     } else {
                         // Fallback for when we can't determine sources
@@ -922,18 +1295,83 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
+    // NEW: Income transactions card
+    private var incomeTransactionsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recent Income Transactions")
+                .font(.headline)
+                .foregroundColor(AppTheme.textColor)
+            
+            if incomeTransactions.isEmpty {
+                Text("No income transactions")
+                    .font(.subheadline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(12)
+            } else {
+                // Sort transactions by date, newest first
+                let sortedTransactions = incomeTransactions.sorted(by: { $0.date > $1.date })
+                
+                ForEach(sortedTransactions.prefix(5)) { transaction in
+                    Button(action: {
+                        selectedTransaction = transaction
+                    }) {
+                        HStack(spacing: 12) {
+                            // Icon
+                            ZStack {
+                                Circle()
+                                    .fill(AppTheme.primaryGreen.opacity(0.2))
+                                    .frame(width: 40, height: 40)
+                                
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(AppTheme.primaryGreen)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(transaction.merchantName.isEmpty ? "Income Deposit" : transaction.merchantName)
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Text(formatDate(transaction.date))
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
+                            }
+                            
+                            Spacer()
+                            
+                            Text("$\(abs(transaction.amount), specifier: "%.2f")")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(AppTheme.primaryGreen)
+                        }
+                        .padding()
+                        .background(AppTheme.cardBackground)
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+        }
+        .padding()
+        .background(AppTheme.cardBackground.opacity(0.3))
+        .cornerRadius(20)
+    }
+    
     // Category card for the Categories tab
-    private func categoryCard(name: String, amount: Double) -> some View {
+    private func categoryCard(name: String, amount: Double, isIncome: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 ZStack {
                     Circle()
-                        .fill(categoryColor(for: name).opacity(0.2))
+                        .fill((isIncome ? AppTheme.primaryGreen : categoryColor(for: name)).opacity(0.2))
                         .frame(width: 40, height: 40)
                     
-                    Image(systemName: getCategoryIcon(for: name))
+                    Image(systemName: isIncome ? "arrow.down.circle.fill" : getCategoryIcon(for: name))
                         .font(.system(size: 18))
-                        .foregroundColor(categoryColor(for: name))
+                        .foregroundColor(isIncome ? AppTheme.primaryGreen : categoryColor(for: name))
                 }
                 
                 Text(name)
@@ -944,12 +1382,12 @@ struct InsightsView: View {
                 
                 Text("$\(amount, specifier: "%.0f")")
                     .font(.headline)
-                    .foregroundColor(AppTheme.textColor)
+                    .foregroundColor(isIncome ? AppTheme.primaryGreen : AppTheme.textColor)
             }
             
-            // Percentage of total spending
+            // Percentage of total
             HStack {
-                Text("\(Int(amount / totalSpending * 100))% of total")
+                Text("\(Int(amount / (isIncome ? totalIncome : totalSpending) * 100))% of total")
                     .font(.caption)
                     .foregroundColor(AppTheme.textColor.opacity(0.7))
                 
@@ -963,9 +1401,9 @@ struct InsightsView: View {
                     .frame(height: 8)
                 
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(categoryColor(for: name))
-                    .frame(width: totalSpending > 0
-                           ? CGFloat(amount / totalSpending) * (UIScreen.main.bounds.width - 64)
+                    .fill(isIncome ? AppTheme.primaryGreen : categoryColor(for: name))
+                    .frame(width: (isIncome ? totalIncome : totalSpending) > 0
+                           ? CGFloat(amount / (isIncome ? totalIncome : totalSpending)) * (UIScreen.main.bounds.width - 64)
                            : 0,
                            height: 8)
             }
@@ -973,6 +1411,273 @@ struct InsightsView: View {
         .padding()
         .background(AppTheme.cardBackground)
         .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(AppTheme.cardStroke, lineWidth: 1)
+        )
+    }
+    
+    // Income source detail view
+    private func incomeSourceDetailView(for source: String) -> some View {
+        let transactions = transactionsForIncomeSource(source)
+        let totalAmount = transactions.reduce(0.0) { $0 + abs($1.amount) }
+        
+        return NavigationView {
+            ZStack {
+                AppTheme.backgroundGradient
+                    .edgesIgnoringSafeArea(.all)
+                
+                VStack(spacing: 16) {
+                    // Header
+                    VStack(spacing: 4) {
+                        Text(source)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(AppTheme.textColor)
+                        
+                        Text("Income Source")
+                            .font(.subheadline)
+                            .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    }
+                    .padding(.top)
+                    
+                    // Total income from this source
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Total Income")
+                                .font(.subheadline)
+                                .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            
+                            Text("$\(totalAmount, specifier: "%.2f")")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(AppTheme.primaryGreen)
+                        }
+                        
+                        Spacer()
+                        
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Percentage")
+                                .font(.subheadline)
+                                .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            
+                            Text("\(Int(totalAmount / totalIncome * 100))%")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(AppTheme.accentBlue)
+                        }
+                    }
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+                    
+                    // All transactions from this source
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Income Transactions")
+                                .font(.headline)
+                                .foregroundColor(AppTheme.textColor)
+                                .padding(.horizontal)
+                            
+                            ForEach(transactions.sorted(by: { $0.date > $1.date })) { transaction in
+                                Button(action: {
+                                    selectedTransaction = transaction
+                                    showIncomeSourceDetail = nil
+                                }) {
+                                    HStack(spacing: 12) {
+                                        // Icon
+                                        ZStack {
+                                            Circle()
+                                                .fill(AppTheme.primaryGreen.opacity(0.2))
+                                                .frame(width: 40, height: 40)
+                                            
+                                            Image(systemName: "arrow.down.circle.fill")
+                                                .font(.system(size: 18))
+                                                .foregroundColor(AppTheme.primaryGreen)
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(transaction.name)
+                                                .font(.subheadline)
+                                                .foregroundColor(AppTheme.textColor)
+                                            
+                                            Text(formatDate(transaction.date))
+                                                .font(.caption)
+                                                .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Text("$\(abs(transaction.amount), specifier: "%.2f")")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(AppTheme.primaryGreen)
+                                    }
+                                    .padding()
+                                    .background(AppTheme.cardBackground)
+                                    .cornerRadius(12)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .padding(.horizontal)
+                            }
+                        }
+                        .padding(.bottom, 40)
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Close") {
+                        showIncomeSourceDetail = nil
+                    }
+                    .foregroundColor(AppTheme.primaryGreen)
+                }
+            }
+        }
+    }
+    
+    // Category detail view
+    private func categoryDetailView(for category: String, isIncome: Bool) -> some View {
+        let transactions = transactionsForCategory(category, isIncome: isIncome)
+        let totalAmount = transactions.reduce(0.0) { $0 + (isIncome ? abs($1.amount) : $1.amount) }
+        let totalCompare = isIncome ? totalIncome : totalSpending
+        
+        return NavigationView {
+            ZStack {
+                AppTheme.backgroundGradient
+                    .edgesIgnoringSafeArea(.all)
+                
+                VStack(spacing: 16) {
+                    // Header
+                    VStack(spacing: 4) {
+                        Text(category)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(AppTheme.textColor)
+                        
+                        Text(isIncome ? "Income Category" : "Expense Category")
+                            .font(.subheadline)
+                            .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    }
+                    .padding(.top)
+                    
+                    // Category icon
+                    ZStack {
+                        Circle()
+                            .fill((isIncome ? AppTheme.primaryGreen : categoryColor(for: category)).opacity(0.2))
+                            .frame(width: 60, height: 60)
+                        
+                        Image(systemName: isIncome ? "arrow.down.circle.fill" : getCategoryIcon(for: category))
+                            .font(.system(size: 30))
+                            .foregroundColor(isIncome ? AppTheme.primaryGreen : categoryColor(for: category))
+                    }
+                    .padding(.bottom, 8)
+                    
+                    // Total for this category
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(isIncome ? "Total Income" : "Total Spent")
+                                .font(.subheadline)
+                                .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            
+                            Text("$\(totalAmount, specifier: "%.2f")")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(isIncome ? AppTheme.primaryGreen : AppTheme.expenseColor)
+                        }
+                        
+                        Spacer()
+                        
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Percentage")
+                                .font(.subheadline)
+                                .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            
+                            Text("\(Int(totalAmount / totalCompare * 100))%")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(AppTheme.accentBlue)
+                        }
+                    }
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+                    
+                    // All transactions in this category
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("\(category) Transactions")
+                                .font(.headline)
+                                .foregroundColor(AppTheme.textColor)
+                                .padding(.horizontal)
+                            
+                            if transactions.isEmpty {
+                                Text("No transactions found in this category")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .padding()
+                            } else {
+                                ForEach(transactions.sorted(by: { $0.date > $1.date })) { transaction in
+                                    Button(action: {
+                                        selectedTransaction = transaction
+                                        selectedCategoryForDetail = nil
+                                    }) {
+                                        HStack(spacing: 12) {
+                                            // Icon
+                                            ZStack {
+                                                Circle()
+                                                    .fill((isIncome ? AppTheme.primaryGreen : categoryColor(for: category)).opacity(0.2))
+                                                    .frame(width: 40, height: 40)
+                                                
+                                                Image(systemName: isIncome ? "arrow.down.circle.fill" : getCategoryIcon(for: category))
+                                                    .font(.system(size: 18))
+                                                    .foregroundColor(isIncome ? AppTheme.primaryGreen : categoryColor(for: category))
+                                            }
+                                            
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(transaction.merchantName.isEmpty ? transaction.name : transaction.merchantName)
+                                                    .font(.subheadline)
+                                                    .foregroundColor(AppTheme.textColor)
+                                                
+                                                Text(formatDate(transaction.date))
+                                                    .font(.caption)
+                                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            Text("$\(isIncome ? abs(transaction.amount) : transaction.amount, specifier: "%.2f")")
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(isIncome ? AppTheme.primaryGreen : AppTheme.expenseColor)
+                                        }
+                                        .padding()
+                                        .background(AppTheme.cardBackground)
+                                        .cornerRadius(12)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .padding(.horizontal)
+                                }
+                            }
+                        }
+                        .padding(.bottom, 40)
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Close") {
+                        selectedCategoryForDetail = nil
+                    }
+                    .foregroundColor(AppTheme.primaryGreen)
+                }
+            }
+        }
     }
     
     // MARK: - Helper Methods
@@ -1085,7 +1790,7 @@ struct InsightsView: View {
         )
     }
     
-    // NEW: Vendor color generator
+    // Vendor color generator
     private func vendorColor(for vendor: String) -> Color {
         let vendorColors: [Color] = [
             AppTheme.primaryGreen,
@@ -1105,6 +1810,19 @@ struct InsightsView: View {
         
         return vendorColors[index]
     }
+}
+
+// Support for income source detail sheet
+struct IncomeSourceDetail: Identifiable {
+    var id: String { name }
+    let name: String
+}
+
+// Support for category detail sheet
+struct CategoryDetailInfo: Identifiable {
+    var id: String { name + (isIncome ? "-income" : "-expense") }
+    let name: String
+    let isIncome: Bool
 }
 
 // Data structure for pie chart
