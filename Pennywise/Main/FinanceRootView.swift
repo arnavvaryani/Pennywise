@@ -50,12 +50,20 @@ struct FinanceRootView: View {
                     }
                     .tag(3)
                     
+//                    NavigationView {
+//                        FinancialAssistantView()
+//                            .navigationTitle("Assistant")
+//                            .navigationBarTitleDisplayMode(.inline)
+//                    }
+//                    .tag(4)
+                    
                     NavigationView {
                        SettingsView()
                             .navigationTitle("Settings")
                             .navigationBarTitleDisplayMode(.inline)
                     }
                     .tag(4)
+
                     
                 }
                 .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))

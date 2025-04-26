@@ -55,7 +55,9 @@ struct InsightsView: View {
     }
     
     private var expenseTransactions: [PlaidTransaction] {
-        transactionsInTimeframe.filter { $0.amount > 0 }
+        transactionsInTimeframe.filter { transaction in
+            transaction.amount > 0
+        }
     }
     
     private var incomeTransactions: [PlaidTransaction] {
