@@ -8,16 +8,11 @@ struct InsightsView: View {
     @State private var selectedTimeframe: TimeFrame = .month
     @State private var selectedTab = 0
     @State private var isRefreshing = false
-    @State private var showingSavingsTips = false
     @State private var selectedCategoryIndex: Int? = nil
+    @State private var selectedTransaction: PlaidTransaction? = nil
     
     // Tab options
     let tabs = ["Overview", "Spending", "Income", "Categories"]
-    
-    // Timeframe options
-    enum TimeFrame {
-        case week, month, year
-    }
     
     // Computed properties
     private var timeframeTitle: String {
@@ -78,6 +73,23 @@ struct InsightsView: View {
             .sorted { $0.1 > $1.1 }
     }
     
+    // Top vendors calculation
+    private var topVendors: [(String, Double)] {
+        // Group expense transactions by vendor and sum amounts
+        var vendors: [String: Double] = [:]
+        
+        for transaction in expenseTransactions {
+            let merchant = transaction.merchantName.isEmpty ? "Unknown Vendor" : transaction.merchantName
+            vendors[merchant, default: 0] += transaction.amount
+        }
+        
+        // Convert to array and sort by amount (highest first)
+        return vendors.map { ($0.key, $0.value) }
+            .sorted { $0.1 > $1.1 }
+            .prefix(5)
+            .map { ($0.0, $0.1) }
+    }
+    
     private var totalSpending: Double {
         expenseTransactions.reduce(0) { $0 + $1.amount }
     }
@@ -88,17 +100,6 @@ struct InsightsView: View {
     
     private var netCashflow: Double {
         totalIncome - totalSpending
-    }
-    
-    // Data for pie chart
-    private var pieChartData: [PieChartDataPoint] {
-        categoryBreakdown.map { category in
-            PieChartDataPoint(
-                category: category.0,
-                amount: category.1,
-                color: categoryColor(for: category.0)
-            )
-        }
     }
     
     // Income sources breakdown
@@ -141,7 +142,7 @@ struct InsightsView: View {
                 } else {
                     ScrollView {
                         // Display content based on selected tab
-                        VStack(spacing: 16) {
+                        VStack(spacing: 20) {
                             switch selectedTab {
                             case 0:
                                 overviewTabContent
@@ -155,7 +156,7 @@ struct InsightsView: View {
                                 overviewTabContent
                             }
                         }
-                        .padding(.top, 8)
+                        .padding(.top, 12)
                         .padding(.bottom, 60)
                     }
                 }
@@ -169,6 +170,10 @@ struct InsightsView: View {
                     isRefreshing = false
                 }
             }
+        }
+        .sheet(item: $selectedTransaction) { transaction in
+            TransactionDetailViewFirestore(transaction: transaction)
+                .environmentObject(plaidManager)
         }
         .navigationTitle("Insights")
         .navigationBarTitleDisplayMode(.inline)
@@ -237,70 +242,25 @@ struct InsightsView: View {
     // MARK: - Tab Selector
     
     private var tabSelectorView: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
+        HStack(spacing: 0) {
+            ForEach(0..<tabs.count, id: \.self) { index in
                 Button(action: {
                     withAnimation {
-                        selectedTab = 0
+                        selectedTab = index
                     }
                 }) {
-                    Text("Overview")
+                    Text(tabs[index])
                         .font(.footnote)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(selectedTab == 0 ? AppTheme.primaryGreen : Color.clear)
-                        .foregroundColor(selectedTab == 0 ? .white : AppTheme.textColor.opacity(0.6))
-                        .cornerRadius(20)
-                }
-                
-                Button(action: {
-                    withAnimation {
-                        selectedTab = 1
-                    }
-                }) {
-                    Text("Spending")
-                        .font(.footnote)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(selectedTab == 1 ? AppTheme.primaryGreen : Color.clear)
-                        .foregroundColor(selectedTab == 1 ? .white : AppTheme.textColor.opacity(0.6))
-                        .cornerRadius(20)
-                }
-                
-                Button(action: {
-                    withAnimation {
-                        selectedTab = 2
-                    }
-                }) {
-                    Text("Income")
-                        .font(.footnote)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(selectedTab == 2 ? AppTheme.primaryGreen : Color.clear)
-                        .foregroundColor(selectedTab == 2 ? .white : AppTheme.textColor.opacity(0.6))
-                        .cornerRadius(20)
-                }
-                
-                Button(action: {
-                    withAnimation {
-                        selectedTab = 3
-                    }
-                }) {
-                    Text("Categories")
-                        .font(.footnote)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(selectedTab == 3 ? AppTheme.primaryGreen : Color.clear)
-                        .foregroundColor(selectedTab == 3 ? .white : AppTheme.textColor.opacity(0.6))
-                        .cornerRadius(20)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(selectedTab == index ? AppTheme.primaryGreen : Color.clear)
+                        .foregroundColor(selectedTab == index ? .white : AppTheme.textColor.opacity(0.6))
                 }
             }
-            .padding(4)
-            .background(AppTheme.cardBackground)
-            .cornerRadius(8)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
         }
+        .background(AppTheme.cardBackground)
+        .cornerRadius(8)
+        .padding(.horizontal, 16)
     }
     
     // For the matched geometry effect
@@ -370,7 +330,7 @@ struct InsightsView: View {
     
     // Overview tab content
     private var overviewTabContent: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             // Financial snapshot card
             financialSnapshotCard
                 .padding(.horizontal)
@@ -379,15 +339,15 @@ struct InsightsView: View {
             topSpendingCategoriesCard
                 .padding(.horizontal)
             
-            // Savings insights card
-            savingsInsightsCard
+            // Top spending vendors card (replacing Savings Insights)
+            topVendorsCard
                 .padding(.horizontal)
         }
     }
     
     // Spending tab content
     private var spendingTabContent: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             // Spending summary card
             spendingSummaryCard
                 .padding(.horizontal)
@@ -404,7 +364,7 @@ struct InsightsView: View {
     
     // Income tab content
     private var incomeTabContent: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             // Income summary card
             incomeSummaryCard
                 .padding(.horizontal)
@@ -420,25 +380,9 @@ struct InsightsView: View {
         VStack(spacing: 16) {
             if !categoryBreakdown.isEmpty {
                 // Show categories
-                ForEach(categoryBreakdown.prefix(5), id: \.0) { category, amount in
+                ForEach(categoryBreakdown, id: \.0) { category, amount in
                     categoryCard(name: category, amount: amount)
                         .padding(.horizontal)
-                }
-                
-                // View more button if needed
-                if categoryBreakdown.count > 5 {
-                    Button(action: {
-                        // Show all categories
-                    }) {
-                        Text("View \(categoryBreakdown.count - 5) More Categories")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.primaryGreen)
-                            .padding(.vertical, 10)
-                            .padding(.horizontal, 20)
-                            .background(AppTheme.primaryGreen.opacity(0.15))
-                            .cornerRadius(10)
-                    }
-                    .padding(.horizontal)
                 }
             } else {
                 Text("No categories found for \(timeframeTitle.lowercased())")
@@ -586,162 +530,77 @@ struct InsightsView: View {
         .cornerRadius(20)
     }
     
-    /// Generate a list of savings tips based on transaction history
-    func generateSavingsTips(from transactions: [PlaidTransaction]) -> [(title: String, description: String, icon: String)] {
-        var tips: [(title: String, description: String, icon: String)] = []
-        
-        // Group transactions by category
-        let categorySpending = Dictionary(
-            grouping: transactions.filter { $0.amount > 0 },
-            by: { $0.category }
-        )
-        
-        // Find top spending categories
-        let sortedCategories = categorySpending.sorted {
-            $0.value.reduce(0) { $0 + $1.amount } > $1.value.reduce(0) { $0 + $1.amount }
-        }
-        
-        // Tip for highest spending category
-        if let topCategory = sortedCategories.first {
-            let totalSpent = topCategory.value.reduce(0) { $0 + $1.amount }
-            let potentialSavings = totalSpent * 0.15 // 15% reduction potential
-            
-            tips.append((
-                title: "Reduce \(topCategory.key) Spending",
-                description: "You've spent $\(String(format: "%.2f", totalSpent)) on \(topCategory.key) \(timeframeTitle.lowercased()). Consider cutting back by 15%, which could save you $\(String(format: "%.2f", potentialSavings)).",
-                icon: "dollarsign.circle"
-            ))
-        }
-        
-        // Tip for dining out
-        let diningTransactions = transactions.filter {
-            $0.category.lowercased().contains("food") ||
-            $0.category.lowercased().contains("restaurant")
-        }
-        
-        if !diningTransactions.isEmpty {
-            let totalDining = diningTransactions.reduce(0) { $0 + $1.amount }
-            let potentialSavings = totalDining * 0.2 // 20% reduction potential
-            
-            tips.append((
-                title: "Cook More, Eat Out Less",
-                description: "You spent $\(String(format: "%.2f", totalDining)) on dining out \(timeframeTitle.lowercased()). Cooking at home 2-3 more times a week could save you $\(String(format: "%.2f", potentialSavings)).",
-                icon: "fork.knife"
-            ))
-        }
-        
-        // Tip for subscriptions
-        let subscriptionTransactions = transactions.filter { transaction in
-            transaction.amount >= 5 && transaction.amount <= 50 &&
-            (transaction.merchantName.lowercased().contains("netflix") ||
-             transaction.merchantName.lowercased().contains("spotify") ||
-             transaction.merchantName.lowercased().contains("hulu") ||
-             transaction.merchantName.lowercased().contains("disney") ||
-             transaction.merchantName.lowercased().contains("apple") ||
-             transaction.merchantName.lowercased().contains("amazon"))
-        }
-        
-        if !subscriptionTransactions.isEmpty {
-            let totalSubscriptions = subscriptionTransactions.reduce(0) { $0 + $1.amount }
-            
-            let timeFrameText: String
-            switch selectedTimeframe {
-            case .week: timeFrameText = "weekly"
-            case .month: timeFrameText = "monthly"
-            case .year: timeFrameText = "yearly"
-            }
-            
-            tips.append((
-                title: "Review Subscriptions",
-                description: "You have \(subscriptionTransactions.count) potential subscriptions costing $\(String(format: "%.2f", totalSubscriptions)) \(timeFrameText). Consider canceling unused services.",
-                icon: "repeat"
-            ))
-        }
-        
-        // Ensure we have at least one tip
-        if tips.isEmpty {
-            tips.append((
-                title: "Keep Tracking Your Spending",
-                description: "Continue monitoring your expenses \(timeframeTitle.lowercased()) to find more savings opportunities.",
-                icon: "chart.bar.fill"
-            ))
-        }
-        
-        return tips
-    }
-    
-    // Savings insights card
-    private var savingsInsightsCard: some View {
+    // NEW: Top Vendors Card (replacing Savings Insights)
+    private var topVendorsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Savings Opportunities")
-                    .font(.headline)
-                    .foregroundColor(AppTheme.textColor)
-                
-                Spacer()
-                
-                Button(action: {
-                    withAnimation {
-                        showingSavingsTips.toggle()
-                    }
-                }) {
-                    Image(systemName: showingSavingsTips ? "chevron.up" : "chevron.down")
-                        .foregroundColor(AppTheme.primaryGreen)
-                        .padding(8)
-                        .background(Circle().fill(AppTheme.primaryGreen.opacity(0.2)))
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
+            Text("Top Spending Vendors")
+                .font(.headline)
+                .foregroundColor(AppTheme.textColor)
             
-            if showingSavingsTips {
-                let savingsTips = generateSavingsTips(from: transactionsInTimeframe)
-                
-                ForEach(Array(savingsTips.enumerated()), id: \.offset) { _, tip in
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: tip.icon)
-                            .foregroundColor(AppTheme.primaryGreen)
-                            .frame(width: 24, height: 24)
-                            .padding(8)
-                            .background(Circle().fill(AppTheme.primaryGreen.opacity(0.2)))
+            if !topVendors.isEmpty {
+                ForEach(topVendors, id: \.0) { vendor, amount in
+                    HStack(alignment: .center, spacing: 12) {
+                        // Vendor icon - using first letter of vendor name
+                        ZStack {
+                            Circle()
+                                .fill(vendorColor(for: vendor).opacity(0.2))
+                                .frame(width: 40, height: 40)
+                            
+                            Text(String(vendor.prefix(1).uppercased()))
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundColor(vendorColor(for: vendor))
+                        }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(tip.title)
+                            Text(vendor)
                                 .font(.subheadline)
-                                .fontWeight(.semibold)
                                 .foregroundColor(AppTheme.textColor)
                             
-                            Text(tip.description)
-                                .font(.caption)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                                .fixedSize(horizontal: false, vertical: true)
+                            // Progress bar
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(AppTheme.cardBackground)
+                                    .frame(height: 6)
+                                
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(vendorColor(for: vendor))
+                                    .frame(width: totalSpending > 0
+                                           ? CGFloat(amount / totalSpending) * 150
+                                           : 0,
+                                           height: 6)
+                            }
+                            .frame(width: 150)
                         }
                         
                         Spacer()
+                        
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("$\(amount, specifier: "%.0f")")
+                                .font(.headline)
+                                .foregroundColor(AppTheme.textColor)
+                            
+                            Text("\(Int(amount / totalSpending * 100))%")
+                                .font(.caption)
+                                .foregroundColor(AppTheme.textColor.opacity(0.6))
+                        }
                     }
                     .padding()
                     .background(AppTheme.cardBackground)
                     .cornerRadius(12)
                 }
             } else {
-                HStack {
-                    Image(systemName: "lightbulb.fill")
-                        .foregroundColor(AppTheme.primaryGreen)
-                    
-                    Text("Tap to see personalized savings tips")
-                        .font(.subheadline)
-                        .foregroundColor(AppTheme.textColor.opacity(0.8))
-                    
-                    Spacer()
-                }
-                .padding()
-                .background(AppTheme.cardBackground)
-                .cornerRadius(12)
+                Text("No vendor data available")
+                    .font(.subheadline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(12)
             }
         }
         .padding()
         .background(AppTheme.cardBackground.opacity(0.3))
         .cornerRadius(20)
-        .animation(.spring(), value: showingSavingsTips)
     }
     
     // Spending summary card
@@ -803,10 +662,42 @@ struct InsightsView: View {
                     return (name, amount)
                 }
                 
-                // Use the new Swift Charts-based PieChartView
+                // Use the Swift Charts-based PieChartView
                 PieChartView(data: chartData)
-                                .frame(height: 300)
-                                .padding(.vertical, 8)
+                    .frame(height: 250)
+                    .padding(.vertical, 8)
+                
+                // Add category legend below the chart
+                ScrollView {
+                    VStack(spacing: 12) {
+                        ForEach(chartData.prefix(5), id: \.0) { category, amount in
+                            HStack(spacing: 10) {
+                                Circle()
+                                    .fill(categoryColor(for: category))
+                                    .frame(width: 12, height: 12)
+                                
+                                Text(category)
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Spacer()
+                                
+                                Text("$\(amount, specifier: "%.0f")")
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Text("(\(Int(amount / totalSpending * 100))%)")
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .padding()
+                    .background(AppTheme.cardBackground)
+                    .cornerRadius(12)
+                }
+                .frame(maxHeight: 200)
             }
         }
         .padding()
@@ -834,38 +725,43 @@ struct InsightsView: View {
                 let sortedTransactions = expenseTransactions.sorted(by: { $0.date > $1.date })
                 
                 ForEach(sortedTransactions.prefix(5)) { transaction in
-                    HStack(spacing: 12) {
-                        // Category icon
-                        ZStack {
-                            Circle()
-                                .fill(categoryColor(for: transaction.category).opacity(0.2))
-                                .frame(width: 40, height: 40)
+                    Button(action: {
+                        selectedTransaction = transaction
+                    }) {
+                        HStack(spacing: 12) {
+                            // Category icon
+                            ZStack {
+                                Circle()
+                                    .fill(categoryColor(for: transaction.category).opacity(0.2))
+                                    .frame(width: 40, height: 40)
+                                
+                                Image(systemName: getCategoryIcon(for: transaction.category))
+                                    .font(.system(size: 18))
+                                    .foregroundColor(categoryColor(for: transaction.category))
+                            }
                             
-                            Image(systemName: getCategoryIcon(for: transaction.category))
-                                .font(.system(size: 18))
-                                .foregroundColor(categoryColor(for: transaction.category))
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(transaction.merchantName)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(transaction.merchantName)
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Text(formatDate(transaction.date))
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
+                            }
+                            
+                            Spacer()
+                            
+                            Text("$\(transaction.amount, specifier: "%.2f")")
                                 .font(.subheadline)
-                                .foregroundColor(AppTheme.textColor)
-                            
-                            Text(formatDate(transaction.date))
-                                .font(.caption)
-                                .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                .fontWeight(.semibold)
+                                .foregroundColor(transaction.amount >= 0 ? AppTheme.expenseColor : AppTheme.primaryGreen)
                         }
-                        
-                        Spacer()
-                        
-                        Text("$\(transaction.amount, specifier: "%.2f")")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(transaction.amount >= 0 ? AppTheme.expenseColor : AppTheme.primaryGreen)
+                        .padding()
+                        .background(AppTheme.cardBackground)
+                        .cornerRadius(12)
                     }
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+                    .buttonStyle(PlainButtonStyle())
                 }
             }
         }
@@ -1025,7 +921,6 @@ struct InsightsView: View {
         .background(AppTheme.cardBackground.opacity(0.3))
         .cornerRadius(20)
     }
-
     
     // Category card for the Categories tab
     private func categoryCard(name: String, amount: Double) -> some View {
@@ -1189,9 +1084,28 @@ struct InsightsView: View {
             brightness: 0.8
         )
     }
+    
+    // NEW: Vendor color generator
+    private func vendorColor(for vendor: String) -> Color {
+        let vendorColors: [Color] = [
+            AppTheme.primaryGreen,
+            AppTheme.accentBlue,
+            AppTheme.accentPurple,
+            Color(hex: "#FF5757"),
+            Color(hex: "#FFD700"),
+            Color(hex: "#9370DB"),
+            Color(hex: "#FF8C00"),
+            Color(hex: "#20B2AA"),
+            Color(hex: "#FF7F50")
+        ]
+        
+        // Generate a consistent index based on vendor name
+        let hash = abs(vendor.hashValue)
+        let index = hash % vendorColors.count
+        
+        return vendorColors[index]
+    }
 }
-
-// MARK: - Supporting Views
 
 // Data structure for pie chart
 struct PieChartDataPoint: Identifiable {
@@ -1200,94 +1114,3 @@ struct PieChartDataPoint: Identifiable {
     let amount: Double
     let color: Color
 }
-// MARK: - Supporting Views
-
-// Data structure for pie chart
-
-
-// Category Pie Chart View
-struct CategoryPieChartView: View {
-    let dataPoints: [PieChartDataPoint]
-    let totalAmount: Double
-    @Binding var selectedIndex: Int?
-    
-    var body: some View {
-        ZStack {
-            // The pie chart
-            GeometryReader { geometry in
-                ZStack(alignment: .center) {
-                    ForEach(dataPoints.indices, id: \.self) { index in
-                        PieSlice(
-                            startAngle: startAngle(at: index),
-                            endAngle: endAngle(at: index)
-                        )
-                        .fill(dataPoints[index].color)
-                        .scaleEffect(selectedIndex == index ? 1.05 : 1.0)
-                        .animation(.spring(), value: selectedIndex)
-                        .onTapGesture {
-                            withAnimation {
-                                if selectedIndex == index {
-                                    selectedIndex = nil
-                                } else {
-                                    selectedIndex = index
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Center circle
-                    Circle()
-                        .fill(AppTheme.cardBackground.opacity(0.8))
-                        .frame(width: min(geometry.size.width, geometry.size.height) * 0.5)
-                    
-                    // Text in center
-                    VStack(spacing: 4) {
-                        if let selectedIndex = selectedIndex {
-                            let dataPoint = dataPoints[selectedIndex]
-                            Text(dataPoint.category)
-                                .font(.headline)
-                                .foregroundColor(AppTheme.textColor)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: false, vertical: true)
-                            
-                            Text("$\(dataPoint.amount, specifier: "%.0f")")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(dataPoint.color)
-                            
-                            Text("\(Int(dataPoint.amount / totalAmount * 100))%")
-                                .font(.caption)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                        } else {
-                            Text("$\(totalAmount, specifier: "%.0f")")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(AppTheme.textColor)
-                            
-                            Text("Total")
-                                .font(.caption)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                        }
-                    }
-                    .padding()
-                    .multilineTextAlignment(.center)
-                }
-                .frame(width: min(geometry.size.width, geometry.size.height), height: min(geometry.size.width, geometry.size.height))
-                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-            }
-        }
-    }
-    
-    private func startAngle(at index: Int) -> Angle {
-        let precedingSum = dataPoints.prefix(index).reduce(0) { $0 + $1.amount }
-        return .degrees(precedingSum / totalAmount * 360 - 90)
-    }
-    
-    private func endAngle(at index: Int) -> Angle {
-        let precedingSum = dataPoints.prefix(index).reduce(0) { $0 + $1.amount }
-        let currentAmount = dataPoints[index].amount
-        return .degrees((precedingSum + currentAmount) / totalAmount * 360 - 90)
-    }
-}
- 
-

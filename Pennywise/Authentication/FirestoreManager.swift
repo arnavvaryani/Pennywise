@@ -757,13 +757,3 @@ class FirestoreManager: ObservableObject {
     }
 }
 
-// MARK: - BudgetCategory Extension
-
-extension BudgetCategory {
-    // Add an ID property to BudgetCategory if it doesn't already have one
-    var id: String {
-        // Create a stable ID from the category name if not otherwise provided
-        // In a real app, you'd use a UUID or other unique identifier
-        return UUID().uuidString
-    }
-}

@@ -17,10 +17,6 @@ struct SettingsView: View {
     @AppStorage("biometricAuthEnabled") private var biometricAuthEnabled = true
     @AppStorage("requireBiometricsOnOpen") private var requireBiometricsOnOpen = true
     
-    // Notifications
-    @AppStorage("notificationsEnabled") private var notificationsEnabled = true
-    @AppStorage("budgetAlertNotifications") private var budgetAlertNotifications = true
-    
     // Display preferences
     @AppStorage("showBalanceOnHomeScreen") private var showBalanceOnHomeScreen = true
     
@@ -61,9 +57,6 @@ struct SettingsView: View {
                     
                     // Security section (with fixed biometrics)
                     securitySection
-                    
-                    // Notifications section
-                    notificationsSection
                     
                     // Display preferences section
                     displayPreferencesSection
@@ -335,33 +328,6 @@ struct SettingsView: View {
         }
     }
     
-    // MARK: - Notifications Section
-    private var notificationsSection: some View {
-        VStack(spacing: 16) {
-            sectionHeader("Notifications")
-            
-            settingsCard {
-                settingsToggle(
-                    title: "Allow Notifications",
-                    subtitle: "Enable or disable all app notifications",
-                    isOn: $notificationsEnabled,
-                    icon: "bell.fill"
-                )
-                
-                if notificationsEnabled {
-                    Divider()
-                        .background(AppTheme.textColor.opacity(0.1))
-                    
-                    settingsToggle(
-                        title: "Budget Alerts",
-                        subtitle: "Get notified when you're close to budget limits",
-                        isOn: $budgetAlertNotifications,
-                        icon: "chart.pie.fill"
-                    )
-                }
-            }
-        }
-    }
     
     // MARK: - Display Preferences Section
     private var displayPreferencesSection: some View {
@@ -630,7 +596,7 @@ struct SettingsView: View {
                         
                         aboutSectionTitle("Team")
                         
-                        Text("Developed by Arnav Varyani and the talented team at FinTech Solutions.")
+                        Text("Developed by Arnav Varyani.")
                             .foregroundColor(AppTheme.textColor.opacity(0.7))
                             .font(.body)
                             .fixedSize(horizontal: false, vertical: true)
@@ -638,7 +604,7 @@ struct SettingsView: View {
                         
                         aboutSectionTitle("Contact")
                         
-                        Text("support@pennywiseapp.com\nsupport.pennywiseapp.com")
+                        Text("arnavvaryani@gmail.com")
                             .foregroundColor(AppTheme.textColor.opacity(0.7))
                             .font(.body)
                     }

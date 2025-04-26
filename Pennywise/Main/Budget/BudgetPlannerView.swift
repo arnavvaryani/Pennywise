@@ -20,6 +20,9 @@ struct BudgetPlannerView: View {
     @State private var showSuccessMessage = false
     @State private var successMessage = ""
     
+    // Track if auto budget has been used
+    @AppStorage("hasUsedAutoBudget") private var hasUsedAutoBudget = false
+    
     // Budget metrics
     var totalBudget: Double {
         categories.reduce(0) { $0 + $1.amount }
@@ -124,11 +127,12 @@ struct BudgetPlannerView: View {
                     }
                     .padding(.vertical, 6)
                     .padding(.horizontal, 10)
-                    .background(AppTheme.primaryGreen.opacity(0.2))
+                    .background(AppTheme.primaryGreen.opacity(hasUsedAutoBudget ? 0.1 : 0.2))
                     .cornerRadius(8)
-                    .foregroundColor(AppTheme.primaryGreen)
+                    .foregroundColor(AppTheme.primaryGreen.opacity(hasUsedAutoBudget ? 0.5 : 1.0))
                 }
                 .buttonStyle(ScaleButtonStyle())
+                .disabled(hasUsedAutoBudget)
             }
         }
         .onAppear {
@@ -703,8 +707,9 @@ struct BudgetPlannerView: View {
                        let icon = document.data()["icon"] as? String,
                        let colorHex = document.data()["color"] as? String {
                         
+                        // Create a BudgetCategory with the document ID
                         let category = BudgetCategory(
-                
+                            id: document.documentID,  // Store the Firestore document ID
                             name: name,
                             amount: amount,
                             icon: icon,
@@ -791,7 +796,7 @@ struct BudgetPlannerView: View {
             
             // Add the category locally with the Firestore ID
             let newCategory = BudgetCategory(
-
+                id: categoryRef.documentID,  // Use the Firestore document ID
                 name: category.name.trimmingCharacters(in: .whitespacesAndNewlines),
                 amount: category.amount,
                 icon: category.icon,
@@ -812,29 +817,29 @@ struct BudgetPlannerView: View {
             return
         }
         
-        // Find the category ID
-        if let index = categories.firstIndex(where: { $0.id == category.id }) {
-            let db = Firestore.firestore()
-            let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
+        let db = Firestore.firestore()
+        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(category.id)
+        
+        // Convert Color to hex string
+        let colorHex = category.color.hexString
+        
+        let data: [String: Any] = [
+            "name": category.name.trimmingCharacters(in: .whitespacesAndNewlines),
+            "amount": category.amount,
+            "icon": category.icon,
+            "color": colorHex,
+            "isEssential": CategoryDetailView.isEssentialCategory(category.name),
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        
+        categoryRef.updateData(data) { error in
+            if let error = error {
+                self.errorMessage = "Error updating category: \(error.localizedDescription)"
+                return
+            }
             
-            // Convert Color to hex string
-            let colorHex = category.color.hexString
-            
-            let data: [String: Any] = [
-                "name": category.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                "amount": category.amount,
-                "icon": category.icon,
-                "color": colorHex,
-                "isEssential": CategoryDetailView.isEssentialCategory(category.name),
-                "updatedAt": FieldValue.serverTimestamp()
-            ]
-            
-            categoryRef.updateData(data) { error in
-                if let error = error {
-                    self.errorMessage = "Error updating category: \(error.localizedDescription)"
-                    return
-                }
-                
+            // Find and update the category in our local array
+            if let index = self.categories.firstIndex(where: { $0.id == category.id }) {
                 withAnimation {
                     self.categories[index] = category
                 }
@@ -900,6 +905,12 @@ struct BudgetPlannerView: View {
     
     // Auto budget function
     func autoBudget() {
+        // Prevent multiple uses of auto budget
+        if hasUsedAutoBudget {
+            errorMessage = "You've already used Auto Budget. You can manually edit categories instead."
+            return
+        }
+        
         // First verify we have income amount
         if monthlyIncome <= 0 {
             calculateMonthlyIncomeFromTransactions()
@@ -962,7 +973,7 @@ struct BudgetPlannerView: View {
                        let colorHex = document.data()["color"] as? String {
                         
                         let category = BudgetCategory(
-                          
+                            id: document.documentID,
                             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                             amount: amount,
                             icon: icon,
@@ -1018,7 +1029,7 @@ struct BudgetPlannerView: View {
                     
                     // Create local copy for immediate UI update
                     let newCategory = BudgetCategory(
-            
+                        id: newCategoryRef.documentID,
                         name: categoryName.trimmingCharacters(in: .whitespacesAndNewlines),
                         amount: budgetAmount,
                         icon: icon,
@@ -1050,6 +1061,9 @@ struct BudgetPlannerView: View {
                     
                     // Then add new categories
                     self.categories.append(contentsOf: newCategoriesToAdd)
+                    
+                    // Mark that auto budget has been used
+                    self.hasUsedAutoBudget = true
                     
                     // Show success message
                     self.successMessage = "Budget has been optimized with the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings & debt repayment."
@@ -1120,7 +1134,6 @@ enum BudgetStatus {
     case underBudget
 }
 
-// MARK: - Supporting Components
 
 struct ScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -1130,3 +1143,4 @@ struct ScaleButtonStyle: ButtonStyle {
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
+

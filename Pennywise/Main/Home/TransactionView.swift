@@ -18,20 +18,25 @@ class TransactionViewModel: ObservableObject {
     @Published var date: Date = Date()
     @Published var merchant: String = ""
     @Published var notes: String = ""
+    @Published var isCashTransaction: Bool = true
     
     // UI state
     @Published var isProcessing: Bool = false
     @Published var isAuthorized: Bool = false
     @Published var validationError: String? = nil
     
-    // Categories with appropriate icons
+    // Categories matching budget categories
     let categories: [(name: String, icon: String, color: Color)] = [
         ("Food", "fork.knife", AppTheme.primaryGreen),
-        ("Shopping", "cart", AppTheme.accentBlue),
+        ("Shopping", "cart.fill", AppTheme.accentBlue),
         ("Transportation", "car.fill", AppTheme.accentPurple),
-        ("Entertainment", "play.tv", AppTheme.expenseColor),
-        ("Health", "heart.fill", AppTheme.savingsYellow),
-        ("Utilities", "bolt.fill", AppTheme.investmentPurple),
+        ("Entertainment", "play.tv.fill", Color(hex: "#FFD700")),
+        ("Health", "heart.fill", Color(hex: "#FF5757")),
+        ("Utilities", "bolt.fill", Color(hex: "#9370DB")),
+        ("Housing", "house.fill", Color(hex: "#CD853F")),
+        ("Education", "book.fill", Color(hex: "#4682B4")),
+        ("Personal", "person.fill", Color(hex: "#FF7F50")),
+        ("Subscriptions", "repeat", Color(hex: "#BA55D3")),
         ("Income", "arrow.down.circle.fill", AppTheme.primaryGreen),
         ("Other", "ellipsis.circle.fill", Color.gray)
     ]
@@ -181,15 +186,23 @@ class TransactionViewModel: ObservableObject {
         if lowercaseCategory.contains("food") || lowercaseCategory.contains("dining") {
             return "fork.knife"
         } else if lowercaseCategory.contains("shop") {
-            return "cart"
+            return "cart.fill"
         } else if lowercaseCategory.contains("transport") {
             return "car.fill"
         } else if lowercaseCategory.contains("entertainment") {
-            return "play.tv"
+            return "play.tv.fill"
         } else if lowercaseCategory.contains("health") {
             return "heart.fill"
-        } else if lowercaseCategory.contains("utilities") {
+        } else if lowercaseCategory.contains("utility") || lowercaseCategory.contains("bill") {
             return "bolt.fill"
+        } else if lowercaseCategory.contains("housing") || lowercaseCategory.contains("rent") {
+            return "house.fill"
+        } else if lowercaseCategory.contains("education") {
+            return "book.fill"
+        } else if lowercaseCategory.contains("personal") {
+            return "person.fill"
+        } else if lowercaseCategory.contains("subscription") {
+            return "repeat"
         } else if lowercaseCategory.contains("income") || lowercaseCategory.contains("deposit") {
             return "arrow.down.circle.fill"
         }
@@ -219,6 +232,9 @@ struct TransactionView: View {
                 
                 ScrollView {
                     VStack(spacing: 20) {
+                        // Cash transaction toggle
+                        cashTransactionToggle
+                        
                         // Transaction details section
                         transactionDetailsSection
                         
@@ -238,7 +254,7 @@ struct TransactionView: View {
                 }
                 .scrollDismissesKeyboard(.immediately)
             }
-            .navigationTitle("New Transaction")
+            .navigationTitle("New Cash Transaction")
             .navigationViewStyle(.stack)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -278,6 +294,27 @@ struct TransactionView: View {
     }
     
     // MARK: - UI Components
+    
+    private var cashTransactionToggle: some View {
+        HStack {
+            Image(systemName: "banknote")
+                .foregroundColor(AppTheme.primaryGreen)
+                .font(.system(size: 24))
+            
+            Text("Cash Transaction")
+                .font(.headline)
+                .foregroundColor(AppTheme.textColor)
+            
+            Spacer()
+            
+            Toggle("", isOn: $viewModel.isCashTransaction)
+                .toggleStyle(SwitchToggleStyle(tint: AppTheme.primaryGreen))
+                .labelsHidden()
+        }
+        .padding()
+        .background(AppTheme.cardBackground)
+        .cornerRadius(12)
+    }
     
     private var transactionDetailsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -368,17 +405,19 @@ struct TransactionView: View {
             
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 12) {
                 ForEach(viewModel.categories, id: \.name) { category in
-                    CategoryButton(
-                        name: category.name,
-                        icon: category.icon,
-                     //   color: category.color,
-                        isSelected: viewModel.selectedCategory == category.name,
-                        action: {
-                            withAnimation {
-                                viewModel.selectedCategory = category.name
+                    if !viewModel.isExpense && category.name == "Income" ||
+                       viewModel.isExpense && category.name != "Income" {
+                        CategoryButton(
+                            name: category.name,
+                            icon: category.icon,
+                            isSelected: viewModel.selectedCategory == category.name,
+                            action: {
+                                withAnimation {
+                                    viewModel.selectedCategory = category.name
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -418,7 +457,7 @@ struct TransactionView: View {
             
             ZStack(alignment: .topLeading) {
                 if viewModel.notes.isEmpty {
-                    Text("Add notes about this transaction...")
+                    Text("Add notes about this cash transaction...")
                         .foregroundColor(AppTheme.textColor.opacity(0.4))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 12)
@@ -460,7 +499,7 @@ struct TransactionView: View {
         .disabled(viewModel.title.isEmpty || viewModel.amount.isEmpty || viewModel.merchant.isEmpty)
         .opacity(viewModel.title.isEmpty || viewModel.amount.isEmpty || viewModel.merchant.isEmpty ? 0.5 : 1)
         .accessibilityLabel("Save transaction")
-        .accessibilityHint("Double tap to save this transaction")
+        .accessibilityHint("Double tap to save this cash transaction")
     }
     
     private var keyboardToolbar: some View {
@@ -521,7 +560,7 @@ struct TransactionView: View {
                     .foregroundColor(.white)
                 
                 let amountValue = Double(viewModel.amount) ?? 0
-                Text("Please use \(biometricType.name) to authorize your \(viewModel.isExpense ? "payment" : "deposit") of $\(String(format: "%.2f", amountValue))")
+                Text("Please use \(biometricType.name) to authorize your cash \(viewModel.isExpense ? "payment" : "deposit") of $\(String(format: "%.2f", amountValue))")
                     .font(.headline)
                     .multilineTextAlignment(.center)
                     .foregroundColor(.white.opacity(0.8))
@@ -653,7 +692,7 @@ struct TransactionView: View {
         }
         
         authService.authenticateWithBiometrics(
-            reason: "Authorize \(viewModel.isExpense ? "payment" : "deposit") of $\(String(format: "%.2f", amountValue))"
+            reason: "Authorize cash \(viewModel.isExpense ? "payment" : "deposit") of $\(String(format: "%.2f", amountValue))"
         ) { success, error in
             DispatchQueue.main.async {
                 if success {

@@ -1,10 +1,3 @@
-//
-//  ChangePasswordView.swift
-//  Pennywise
-//
-//  Created by Arnav Varyani on 4/23/25.
-//
-
 import SwiftUI
 import Firebase
 import FirebaseAuth
@@ -23,12 +16,10 @@ struct ChangePasswordView: View {
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     
-    // Password validation states
+    // Simplified password validation states
     @State private var isPasswordLengthValid = false
     @State private var hasUppercase = false
     @State private var hasLowercase = false
-    @State private var hasDigit = false
-    @State private var hasSpecialChar = false
     
     var body: some View {
         ZStack {
@@ -50,6 +41,7 @@ struct ChangePasswordView: View {
                         successSection
                     }
                     
+                    // Simplified password requirements section
                     passwordRequirementsSection
                     
                     changePasswordButton
@@ -77,7 +69,13 @@ struct ChangePasswordView: View {
             Alert(
                 title: Text(alertTitle),
                 message: Text(alertMessage),
-                dismissButton: .default(Text("OK"))
+                dismissButton: .default(Text("OK")) {
+                    // If success message is not empty, that means password change was successful
+                    if !successMessage.isEmpty {
+                        // Log the user out
+                        authService.signOut()
+                    }
+                }
             )
         }
         .navigationTitle("Change Password")
@@ -174,13 +172,14 @@ struct ChangePasswordView: View {
         .cornerRadius(12)
     }
     
+    // Simplified password requirements section
     private var passwordRequirementsSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Password Requirements")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
-            // Password requirements
+            // Simplified password requirements
             requirementRow(
                 text: "At least 8 characters",
                 isValid: isPasswordLengthValid
@@ -194,16 +193,6 @@ struct ChangePasswordView: View {
             requirementRow(
                 text: "Contains lowercase letter (a-z)",
                 isValid: hasLowercase
-            )
-            
-            requirementRow(
-                text: "Contains a number (0-9)",
-                isValid: hasDigit
-            )
-            
-            requirementRow(
-                text: "Contains a special character (!@#$%^&*)",
-                isValid: hasSpecialChar
             )
         }
         .padding()
@@ -280,21 +269,19 @@ struct ChangePasswordView: View {
     
     // MARK: - Password Validation Functions
     
+    // Simplified password validation
     private func validatePassword(_ password: String) {
         isPasswordLengthValid = password.count >= 8
         hasUppercase = password.range(of: "[A-Z]", options: .regularExpression) != nil
         hasLowercase = password.range(of: "[a-z]", options: .regularExpression) != nil
-        hasDigit = password.range(of: "[0-9]", options: .regularExpression) != nil
-        hasSpecialChar = password.range(of: "[!@#$%^&*(),.?\":{}|<>]", options: .regularExpression) != nil
     }
     
+    // Simplified password validation check
     private func isPasswordValid() -> Bool {
         return !currentPassword.isEmpty &&
                isPasswordLengthValid &&
                hasUppercase &&
                hasLowercase &&
-               hasDigit &&
-               hasSpecialChar &&
                newPassword == confirmPassword
     }
     
@@ -314,84 +301,53 @@ struct ChangePasswordView: View {
         // Start loading state
         isLoading = true
         
-        // Get current user
-        guard let user = Auth.auth().currentUser, let email = user.email else {
-            isLoading = false
-            errorMessage = "User not signed in."
-            return
+        // Use the AuthenticationService to change the password
+        authService.changePassword(currentPassword: currentPassword, newPassword: newPassword) { result in
+            DispatchQueue.main.async {
+                isLoading = false
+                
+                switch result {
+                case .success:
+                    // Clear password fields
+                    currentPassword = ""
+                    newPassword = ""
+                    confirmPassword = ""
+                    
+                    // Show success message
+                    successMessage = "Your password has been updated successfully. You will be logged out."
+                    
+                    // Also show alert for additional confirmation
+                    alertTitle = "Password Changed"
+                    alertMessage = "Your password has been changed successfully. You will be logged out now for security purposes."
+                    showAlert = true
+                    
+                case .failure(let error):
+                    handleAuthError(error)
+                }
+            }
         }
-        
-        // Create credential with current password
-        let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
-        
-        // Reauthenticate user first
-        user.reauthenticate(with: credential) { _, error in
-            
-            if let error = error {
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    
-                    // Handle specific Firebase Auth errors
-                    let authError = error as NSError
-                    if authError.domain == AuthErrorDomain {
-                        switch authError.code {
-                        case AuthErrorCode.wrongPassword.rawValue:
-                            self.errorMessage = "Current password is incorrect."
-                        case AuthErrorCode.tooManyRequests.rawValue:
-                            self.errorMessage = "Too many attempts. Please try again later."
-                        case AuthErrorCode.networkError.rawValue:
-                            self.errorMessage = "Network error. Please check your connection."
-                        default:
-                            self.errorMessage = "Authentication error: \(error.localizedDescription)"
-                        }
-                    } else {
-                        self.errorMessage = "Error: \(error.localizedDescription)"
-                    }
-                }
-                return
+    }
+    
+    private func handleAuthError(_ error: Error) {
+        // Handle specific Firebase Auth errors
+        let authError = error as NSError
+        if authError.domain == AuthErrorDomain {
+            switch authError.code {
+            case AuthErrorCode.wrongPassword.rawValue:
+                errorMessage = "Current password is incorrect."
+            case AuthErrorCode.tooManyRequests.rawValue:
+                errorMessage = "Too many attempts. Please try again later."
+            case AuthErrorCode.networkError.rawValue:
+                errorMessage = "Network error. Please check your connection."
+            case AuthErrorCode.weakPassword.rawValue:
+                errorMessage = "The password is too weak."
+            case AuthErrorCode.requiresRecentLogin.rawValue:
+                errorMessage = "This operation requires recent authentication. Please log in again."
+            default:
+                errorMessage = "Authentication error: \(error.localizedDescription)"
             }
-            
-            // Now update the password
-            user.updatePassword(to: self.newPassword) { error in
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    
-                    if let error = error {
-                        // Handle specific Firebase Auth errors for password update
-                        let authError = error as NSError
-                        if authError.domain == AuthErrorDomain {
-                            switch authError.code {
-                            case AuthErrorCode.weakPassword.rawValue:
-                                self.errorMessage = "The password is too weak."
-                            case AuthErrorCode.requiresRecentLogin.rawValue:
-                                self.errorMessage = "This operation requires recent authentication. Please log in again."
-                            default:
-                                self.errorMessage = "Failed to update password: \(error.localizedDescription)"
-                            }
-                        } else {
-                            self.errorMessage = "Error: \(error.localizedDescription)"
-                        }
-                    } else {
-                        // Password updated successfully
-                        
-                        // Clear password fields
-                        self.currentPassword = ""
-                        self.newPassword = ""
-                        self.confirmPassword = ""
-                        
-                        // Show success message
-                        self.successMessage = "Your password has been updated successfully."
-                        
-                        // Also show alert for additional confirmation
-                        self.alertTitle = "Password Changed"
-                        self.alertMessage = "Your password has been changed successfully. Please use your new password for future logins."
-                        self.showAlert = true
-                        
-                        // Reset biometric check since password has changed
-                        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
-                    }
-                }
-            }
+        } else {
+            errorMessage = "Error: \(error.localizedDescription)"
         }
     }
 }
