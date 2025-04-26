@@ -1,9 +1,10 @@
 //
-//  PennywiseApp.swift
+//  LaunchScreenManager.swift
 //  Pennywise
 //
-//  Created for Pennywise App
+//  Created by Arnav Varyani on 4/8/25.
 //
+
 
 import SwiftUI
 import Firebase
@@ -29,7 +30,6 @@ class LaunchScreenManager: ObservableObject {
     
     func setupApp() {
         // Initialize services and perform startup tasks
-        let authService = AuthenticationService.shared
         let plaidManager = PlaidManager.shared
         
         // Initialize services in parallel

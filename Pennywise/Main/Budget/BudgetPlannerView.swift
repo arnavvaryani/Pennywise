@@ -1,3 +1,10 @@
+//
+//  BudgetPlannerView.swift
+//  Pennywise
+//
+//  Created by Arnav Varyani on 4/8/25.
+//
+
 import SwiftUI
 import Firebase
 import FirebaseFirestore
@@ -961,7 +968,7 @@ struct BudgetPlannerView: View {
         
         // Target percentages based on typical spending patterns
         // These will be distributed among the available categories proportionally
-        var targetPercentages: [String: Double] = [
+        let targetPercentages: [String: Double] = [
             "Food and Drink": 0.15,
             "Groceries": 0.10,
             "General Merchandise": 0.10,
@@ -974,7 +981,6 @@ struct BudgetPlannerView: View {
             "Housing": 0.20,
             "Healthcare": 0.05,
             "Service": 0.04
-            // Default other categories will get equal share of remaining percentage
         ]
         
         // Total allocated percentage
@@ -1698,7 +1704,6 @@ struct BudgetPlannerView: View {
     }
 }
 
-// MARK: - Supporting Types
 
 // Alert data for error handling
 struct AlertData: Identifiable {

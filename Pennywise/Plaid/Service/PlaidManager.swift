@@ -1,3 +1,9 @@
+//
+//  PlaidManager.swift
+//  Pennywise
+//
+//  Created by Arnav Varyani on 4/8/25.
+//
 import SwiftUI
 import Combine
 import LinkKit
@@ -32,7 +38,6 @@ class PlaidManager: ObservableObject {
         setupAutoRefresh()
     }
 
-    // MARK: - Keychain Access Token
     private var accessToken: String? {
         get {
             var item: CFTypeRef?

@@ -1,7 +1,9 @@
-struct ExportAlert: Identifiable {
-    var id: String { message }
-    let message: String
-}
+//
+//  SettingsView.swift
+//  Pennywise
+//
+//  Created by Arnav Varyani on 4/8/25.
+//
 
 import SwiftUI
 import LocalAuthentication
@@ -1323,6 +1325,10 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
-        // Nothing to do here
     }
+}
+
+struct ExportAlert: Identifiable {
+    var id: String { message }
+    let message: String
 }

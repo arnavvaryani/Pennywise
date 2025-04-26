@@ -9,19 +9,15 @@ import SwiftUI
 
 @main
 struct PennywiseApp: App {
-    // Firebase setup
     @UIApplicationDelegateAdaptor(FirebaseAppDelegate.self) var delegate
     
-    // State objects
     @StateObject private var launchScreenManager = LaunchScreenManager()
     @StateObject private var authService = AuthenticationService.shared
     @StateObject private var plaidManager = PlaidManager.shared
     
-    // App state observers
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
-        // Configure navigation appearance globally
         configureAppAppearance()
     }
     
@@ -32,7 +28,7 @@ struct PennywiseApp: App {
                     .environmentObject(launchScreenManager)
                     .environmentObject(authService)
                     .environmentObject(plaidManager)
-                    .preferredColorScheme(.dark) // Force dark mode for consistency
+                    .preferredColorScheme(.dark)
                     .onChange(of: scenePhase) { newPhase in
                         handleScenePhaseChange(newPhase)
                     }
@@ -50,12 +46,10 @@ struct PennywiseApp: App {
     // MARK: - Helper Methods
     
     private func configureAppAppearance() {
-        // Force dark mode for the entire app
         UIApplication.shared.windows.forEach { window in
             window.overrideUserInterfaceStyle = .dark
         }
         
-        // Configure navigation bar appearance
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = UIColor(AppTheme.backgroundPrimary)
@@ -67,7 +61,6 @@ struct PennywiseApp: App {
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().tintColor = UIColor(AppTheme.primaryGreen)
         
-        // Configure tab bar appearance - Not used directly but sets defaults for SwiftUI TabViews
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
         tabBarAppearance.backgroundColor = UIColor(AppTheme.backgroundPrimary)
@@ -81,15 +74,12 @@ struct PennywiseApp: App {
         switch newPhase {
         case .active:
             print("App became active")
-            // Check if we need to refresh data
             if authService.isAuthenticated {
-                // Refresh data if needed
             }
         case .inactive:
             print("App became inactive")
         case .background:
             print("App went to background")
-            // Reset biometric check if needed
             if authService.requireBiometricsOnOpen {
                 authService.resetBiometricCheck()
             }

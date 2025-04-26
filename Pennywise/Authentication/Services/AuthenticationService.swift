@@ -15,48 +15,38 @@ import LocalAuthentication
 import Combine
 
 class AuthenticationService: ObservableObject {
-    // MARK: - Published Properties
     @Published var user: FirebaseAuth.User?
     @Published var isAuthenticated = false
     @Published var authError: Error?
     @Published var isLoading = false
     
-    // MARK: - User Preferences
     @AppStorage("biometricAuthEnabled") var biometricAuthEnabled = false
     @AppStorage("requireBiometricsOnOpen") var requireBiometricsOnOpen = false
     @AppStorage("requireBiometricsForTransactions") var requireBiometricsForTransactions = false
     
-    // MARK: - Private Properties
     private var authStateListener: AuthStateDidChangeListenerHandle?
     private var cancellables = Set<AnyCancellable>()
     
-    // For Apple Sign In
     var currentNonce: String?
     
-    // MARK: - Singleton Instance
     static let shared = AuthenticationService()
     
-    // MARK: - Initialization
     private init() {
         setupFirebaseAuthStateListener()
     }
     
     deinit {
-        // Clean up auth state listener
         if let listener = authStateListener {
             Auth.auth().removeStateDidChangeListener(listener)
         }
     }
     
-    // MARK: - Setup Methods
     private func setupFirebaseAuthStateListener() {
         authStateListener = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             DispatchQueue.main.async {
                 self?.user = user
                 self?.isAuthenticated = user != nil
                 
-                // If user just authenticated and biometric auth is enabled/required on open,
-                // we need to make sure they'll be prompted for biometrics
                 if user != nil && self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
                     UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
                 }
@@ -64,7 +54,6 @@ class AuthenticationService: ObservableObject {
         }
     }
     
-    // MARK: - Biometric Authentication
     
     func getBiometricType() -> BiometricType {
         let context = LAContext()
@@ -95,10 +84,8 @@ class AuthenticationService: ObservableObject {
             return
         }
         
-        // Create credential with current password
         let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
         
-        // Re-authenticate user first
         user.reauthenticate(with: credential) { [weak self] _, error in
             if let error = error {
                 DispatchQueue.main.async {
@@ -109,7 +96,6 @@ class AuthenticationService: ObservableObject {
                 return
             }
             
-            // Now update the password
             user.updatePassword(to: newPassword) { error in
                 DispatchQueue.main.async {
                     self?.isLoading = false
@@ -118,7 +104,6 @@ class AuthenticationService: ObservableObject {
                         self?.authError = error
                         completion(.failure(error))
                     } else {
-                        // Reset user defaults for biometric check since password has changed
                         UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
                         completion(.success(()))
                     }
@@ -135,7 +120,6 @@ class AuthenticationService: ObservableObject {
             context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
                 DispatchQueue.main.async {
                     if success {
-                        // If successful, update our authentication flag
                         UserDefaults.standard.set(true, forKey: "hasPassedBiometricCheck")
                         completion(true, nil)
                     } else {
@@ -155,7 +139,6 @@ class AuthenticationService: ObservableObject {
     }
     
     func shouldRequireBiometricAuth() -> Bool {
-        // Check if biometrics are enabled in settings and the user hasn't passed the check yet
         if biometricAuthEnabled && requireBiometricsOnOpen {
             let hasPassedCheck = UserDefaults.standard.bool(forKey: "hasPassedBiometricCheck")
             return !hasPassedCheck
@@ -195,7 +178,6 @@ class AuthenticationService: ObservableObject {
                     self?.user = user
                     self?.isAuthenticated = true
                     
-                    // Reset biometric check on sign in to force authentication on app launch
                     if self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
                         UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
                     }
@@ -228,10 +210,10 @@ class AuthenticationService: ObservableObject {
                     self?.user = user
                     self?.isAuthenticated = true
                     
-                    // Create user profile in database
+
                     self?.createUserProfile(for: user)
                     
-                    // Reset biometric check for new users
+  
                     if self?.biometricAuthEnabled == true && self?.requireBiometricsOnOpen == true {
                         UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
                     }
@@ -301,10 +283,8 @@ class AuthenticationService: ObservableObject {
                         self?.user = firebaseUser
                         self?.isAuthenticated = true
                         
-                        // Create user profile in database if this is their first login
                         self?.createUserProfile(for: firebaseUser)
                         
-                        // Reset biometric check on sign in
                         if self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
                             UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
                         }
@@ -327,7 +307,7 @@ class AuthenticationService: ObservableObject {
             try Auth.auth().signOut()
             user = nil
             isAuthenticated = false
-            resetBiometricCheck() // Reset biometric check on sign out
+            resetBiometricCheck()
         } catch let error {
             DispatchQueue.main.async {
                 self.authError = error
@@ -340,13 +320,10 @@ class AuthenticationService: ObservableObject {
     private func createUserProfile(for user: FirebaseAuth.User) {
         let db = Firestore.firestore()
         
-        // Check if user profile already exists
         db.collection("users").document(user.uid).getDocument { [weak self] document, error in
             if let document = document, document.exists {
-                // User profile already exists
                 return
             } else {
-                // Create new user profile with default values
                 let userData: [String: Any] = [
                     "name": user.displayName ?? "",
                     "email": user.email ?? "",
@@ -384,7 +361,6 @@ class AuthenticationService: ObservableObject {
         if let name = name {
             updateData["name"] = name
             
-            // Also update display name in Firebase Auth
             let changeRequest = user.createProfileChangeRequest()
             changeRequest.displayName = name
             changeRequest.commitChanges { _ in }
@@ -422,7 +398,6 @@ class AuthenticationService: ObservableObject {
 
     
     func isPasswordValid(_ password: String) -> Bool {
-        // Password should be at least 8 characters with at least one uppercase, one lowercase, and one number
         let passwordRegEx = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)[a-zA-Z\\d]{8,}$"
         let passwordPred = NSPredicate(format: "SELF MATCHES %@", passwordRegEx)
         return passwordPred.evaluate(with: password)

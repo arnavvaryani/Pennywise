@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct BudgetCategory: Identifiable {
-    var id: String = UUID().uuidString // Use a real ID instead of UUID
+    var id: String = UUID().uuidString 
     let name: String
     var amount: Double
     let icon: String

@@ -1,3 +1,10 @@
+//
+//  CategoryDetailView.swift
+//  Pennywise
+//
+//  Created by Arnav Varyani on 4/8/25.
+//
+
 import SwiftUI
 import Firebase
 import FirebaseFirestore

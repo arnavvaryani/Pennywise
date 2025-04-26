@@ -150,10 +150,6 @@ class PlaidFirestoreSync: ObservableObject {
     func syncAccountsToFirestore(completion: ((Bool) -> Void)? = nil) {
         // If no accounts, fetch them first
         if plaidManager.accounts.isEmpty {
-            // We can't directly access the token, so we'll have to rely on the
-            // PlaidManager's internal implementation to load accounts
-            
-            // Just call prepareLinkController to ensure accounts are loaded if possible
             plaidManager.prepareLinkController()
             
             // Give some time for accounts to be fetched, then sync
@@ -176,7 +172,6 @@ class PlaidFirestoreSync: ObservableObject {
         }
     }
     
-    /// Syncs transaction data to Firestore
     /// Syncs transaction data to Firestore
         func syncTransactionsToFirestore(completion: ((Bool) -> Void)? = nil) {
             guard let userId = Auth.auth().currentUser?.uid else {
@@ -257,7 +252,7 @@ class PlaidFirestoreSync: ObservableObject {
                 "amount": transaction.amount,
                 "date": transaction.date,
                 "category": transaction.category,
-                "merchantName": transaction.merchantName ?? "",
+                "merchantName": transaction.merchantName,
                 "pending": transaction.pending,
                 "lastUpdated": FieldValue.serverTimestamp()
             ]

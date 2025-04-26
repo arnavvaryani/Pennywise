@@ -132,10 +132,7 @@ struct AddBudgetCategoryView: View {
             categoryName = category.name
             selectedIcon = category.icon
             selectedColor = category.color
-            
-            // Automatically generate suggested budget amount
-            // In a real app, this would be more sophisticated
-            // For now, we'll just use a percentage of assumed income
+
             let assumedIncome = 5000.0
             let suggestedAmount: Double
             

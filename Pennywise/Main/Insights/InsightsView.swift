@@ -1,3 +1,10 @@
+//
+//  InsightsView.swift
+//  Pennywise
+//
+//  Created by Arnav Varyani on 4/8/25.
+//
+
 import SwiftUI
 import Charts
 
@@ -351,9 +358,6 @@ struct InsightsView: View {
         .cornerRadius(8)
         .padding(.horizontal, 16)
     }
-    
-    // For the matched geometry effect
-    @Namespace private var namespace
     
     // MARK: - Loading State
     

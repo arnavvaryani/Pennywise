@@ -9,7 +9,6 @@ import SwiftUI
 import FirebaseFirestore
 import Combine
 
-// Changed to class to support weak self and cancellables
 class AppCoordinatorViewModel: ObservableObject {
     @Published var showMigrationProgress = false
     @Published var migrationProgress: Double = 0
@@ -24,25 +23,19 @@ class AppCoordinatorViewModel: ObservableObject {
     }
     
     func initializeFirestoreSync() {
-        // Set up Firestore settings
         let firestoreSettings = FirestoreSettings()
         firestoreSettings.isPersistenceEnabled = true
         Firestore.firestore().settings = firestoreSettings
         
-        // Initialize the syncing system
         let _ = PlaidFirestoreSync.shared
         
-        // Set up observers
         setupFirestoreObservers()
     }
     
-    /// Sets up observers for Firestore sync status
     private func setupFirestoreObservers() {
-        // Setup observer for authentication state
         authService.$isAuthenticated
             .sink { [weak self] isAuthenticated in
                 if isAuthenticated {
-                    // Check if we need to migrate data
                     self?.checkForDataMigration()
                 }
             }
@@ -51,43 +44,36 @@ class AppCoordinatorViewModel: ObservableObject {
     
     // MARK: - Data Migration
     
-    /// Checks if data migration is needed and performs it if necessary
     func checkForDataMigration() {
         let hasMigratedToFirestore = UserDefaults.standard.bool(forKey: "hasMigratedToFirestore")
         
         if !hasMigratedToFirestore {
             migrateDataToFirestore()
         } else {
-            // No migration needed, just perform normal sync
             PlaidFirestoreSync.shared.performFullSync()
         }
     }
     
-    /// Migrates existing data to Firestore
     func migrateDataToFirestore() {
-        // Show migration progress
         showMigrationProgress = true
         
         let firestoreManager = FirestoreManager.shared
         
-        // First, sync accounts
+
         firestoreManager.syncAccounts(plaidManager.accounts) { [weak self] accountSuccess in
             guard let self = self else { return }
             
             if accountSuccess {
-                // Update migration progress
+
                 self.migrationProgress = 0.3
                 
-                // Next, sync transactions
+
                 firestoreManager.syncTransactions(self.plaidManager.transactions) { transactionSuccess in
                     if transactionSuccess {
-                        // Update migration progress
                         self.migrationProgress = 0.7
                         
-                        // Get budget categories from Plaid Manager
                         let categories = self.plaidManager.getBudgetCategories()
                         
-                        // Sync each category
                         let group = DispatchGroup()
                         
                         for category in categories {
@@ -98,28 +84,22 @@ class AppCoordinatorViewModel: ObservableObject {
                             }
                         }
                         
-                        // Update budget usage when all categories are synced
                         group.notify(queue: .main) {
                             firestoreManager.updateBudgetUsage { _ in
-                                // Migration complete
                                 self.migrationProgress = 1.0
                                 
-                                // Mark migration as complete
                                 UserDefaults.standard.set(true, forKey: "hasMigratedToFirestore")
                                 
-                                // Hide migration progress after a short delay
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                     self.showMigrationProgress = false
                                 }
                             }
                         }
                     } else {
-                        // Handle migration failure
                         self.handleMigrationFailure()
                     }
                 }
             } else {
-                // Handle migration failure
                 self.handleMigrationFailure()
             }
         }
@@ -127,16 +107,13 @@ class AppCoordinatorViewModel: ObservableObject {
     
     /// Handles migration failure
     func handleMigrationFailure() {
-        // Reset migration state
         showMigrationProgress = false
         migrationProgress = 0
         
-        // Show error alert
         showMigrationError = true
     }
 }
 
-// The view struct that uses the class above
 struct AppCoordinator: View {
     
     @StateObject private var viewModel = AppCoordinatorViewModel()
@@ -219,9 +196,7 @@ struct AppCoordinator: View {
     }
     
     private func checkBiometricAuthRequirement() {
-        // Check if user is authenticated and biometric auth is required
         if authService.isAuthenticated && authService.requireBiometricsOnOpen && authService.biometricAuthEnabled {
-            // Always check if user has passed the biometric check in this session
             let hasPassedBiometricCheck = UserDefaults.standard.bool(forKey: "hasPassedBiometricCheck")
             
             if !hasPassedBiometricCheck {
@@ -229,7 +204,6 @@ struct AppCoordinator: View {
                 if biometricType != .none {
                     showBiometricAuth = true
                 } else {
-                    // If biometrics is not available, mark as passed
                     UserDefaults.standard.set(true, forKey: "hasPassedBiometricCheck")
                 }
             }
@@ -239,7 +213,6 @@ struct AppCoordinator: View {
     }
 }
 
-/// Progress view for data migration
 struct DataMigrationView: View {
     @Binding var progress: Double
     

@@ -2,27 +2,20 @@
 //  AccountDeletionManager.swift
 //  Pennywise
 //
-//  Updated 2025-04-25
+//  Created by Arnav Varyani on 4/8/25.
 //
 
 import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 
-/// Handles irreversible deletion of the user’s FirebaseAuth account
-/// **and** all `/users/{uid}` data in Firestore. No password prompt.
+
 final class AccountDeletionManager {
 
     // MARK: Singleton
     static let shared = AccountDeletionManager()
     private init() {}
 
-    // MARK: Public API -------------------------------------------------------
-
-    /// Deletes every trace of the signed-in user.
-    ///
-    /// Call this only after your UI has asked the user to type
-    /// `DELETE` (or similar) and they confirmed.
     func deleteAccount(completion: @escaping (Result<Void, Error>) -> Void) {
 
         guard let user = Auth.auth().currentUser else {
@@ -42,11 +35,10 @@ final class AccountDeletionManager {
                 // 2. Delete the Auth account
                 user.delete { deleteError in
                     if let deleteError = deleteError {
-                        completion(.failure(deleteError)) // may be .requiresRecentLogin
+                        completion(.failure(deleteError))
                         return
                     }
 
-                    // 3. Sign out locally
                     do {
                         try Auth.auth().signOut()
                         completion(.success(()))
@@ -58,7 +50,6 @@ final class AccountDeletionManager {
         }
     }
 
-    // MARK: Firestore purge (same as previous version) ----------------------
 
     private func deleteUserData(uid: String,
                                 completion: @escaping (Result<Void, Error>) -> Void) {
@@ -66,7 +57,6 @@ final class AccountDeletionManager {
         let db  = Firestore.firestore()
         let doc = db.collection("users").document(uid)
 
-        // Keep this list in sync with your schema
         let subCollections = [
             "accounts",
             "transactions",
@@ -141,7 +131,6 @@ final class AccountDeletionManager {
         }
     }
 
-    // MARK: Error type -------------------------------------------------------
 
     enum DeleteError: LocalizedError {
         case noSignedInUser

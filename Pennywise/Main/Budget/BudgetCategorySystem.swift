@@ -13,9 +13,7 @@ import FirebaseFirestore
 class BudgetCategorySystem {
     static let shared = BudgetCategorySystem()
     
-    // Standard predefined categories with icons and colors
     let predefinedCategories: [PredefinedCategory] = [
-        // Essential expenses
         PredefinedCategory(
             name: "Housing", 
             icon: "house.fill", 
@@ -182,7 +180,6 @@ class BudgetCategorySystem {
         return spending
     }
     
-    // Generate recommended budget amounts for categories based on income and spending patterns
     func generateRecommendedBudgets(monthlyIncome: Double, transactions: [PlaidTransaction]) -> [BudgetCategory] {
         // Calculate current spending patterns
         let spending = calculateSpendingByBudgetCategory(transactions: transactions)

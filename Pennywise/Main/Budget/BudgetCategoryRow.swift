@@ -1,5 +1,5 @@
 //
-//  BudgetCategoryRow 2.swift
+//  BudgetCategoryRow.swift
 //  Pennywise
 //
 //  Created by Arnav Varyani on 4/24/25.

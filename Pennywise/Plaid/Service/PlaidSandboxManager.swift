@@ -2,13 +2,13 @@
 //  PlaidSandboxManager.swift
 //  Pennywise
 //
+//  Created by Arnav Varyani on 4/8/25.
+//
 
 import Foundation
 import LinkKit
 
 /// PlaidSandboxManager: Direct integration with Plaid's API for sandbox testing
-/// Note: This is for development purposes only. In production, these API calls
-/// should be handled by your backend server.
 class PlaidSandboxManager {
     static let shared = PlaidSandboxManager()
       
@@ -431,11 +431,11 @@ class PlaidSandboxManager {
             "ins_5": "Capital One",
             "ins_6": "USAA",
             "ins_7": "Ally Bank",
-            "ins_109508": "First Platypus Bank", // Common Plaid Sandbox institution
-            "ins_109509": "First Gingham Credit Union", // Common Plaid Sandbox institution
-            "ins_109510": "Tattersall Federal Credit Union", // Common Plaid Sandbox institution
-            "ins_109511": "Tartan Bank", // Common Plaid Sandbox institution
-            "ins_109512": "Houndstooth Bank" // Common Plaid Sandbox institution
+            "ins_109508": "First Platypus Bank",
+            "ins_109509": "First Gingham Credit Union",
+            "ins_109510": "Tattersall Federal Credit Union",
+            "ins_109511": "Tartan Bank",
+            "ins_109512": "Houndstooth Bank"
         ]
         
         return institutionNames[institutionID] ?? "Connected Bank"
@@ -475,7 +475,7 @@ class PlaidSandboxManager {
             transactions.append(PlaidTransaction(
                 id: "tx_\(UUID().uuidString)",
                 name: merchants[merchantIndex],
-                amount: isIncome ? -amount : amount, // Plaid uses negative for income
+                amount: isIncome ? -amount : amount,
                 date: date,
                 category: categories[categoryIndex],
                 merchantName: merchants[merchantIndex],

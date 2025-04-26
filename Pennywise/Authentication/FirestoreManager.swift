@@ -12,7 +12,6 @@ import Combine
 import FirebaseAuth
 import SwiftUI
 
-/// Manager class for handling Firestore database operations
 class FirestoreManager: ObservableObject {
     static let shared = FirestoreManager()
     
@@ -86,7 +85,7 @@ class FirestoreManager: ObservableObject {
         }
         
         // Create transaction batches (max 500 operations per batch)
-        let batchSize = 450 // Leaving room for other batch operations
+        let batchSize = 450
         let batches = stride(from: 0, to: transactions.count, by: batchSize).map {
             Array(transactions[$0..<min($0 + batchSize, transactions.count)])
         }
@@ -502,7 +501,6 @@ class FirestoreManager: ObservableObject {
                 categorySpending[transaction.category, default: 0] += transaction.amount
             }
             
-            // FIX: Convert the top categories to a format Firestore supports
             // Instead of dictionary with nested types, use an array of maps with simple string/number fields
             let topCategories = categorySpending.map { (category: String, amount: Double) -> [String: Any] in
                 return ["category": category, "amount": amount]
@@ -563,7 +561,7 @@ class FirestoreManager: ObservableObject {
                     "income": income,
                     "expenses": expenses,
                     "savingsRate": savingsRate,
-                    "topCategories": topCategories, // Now properly formatted for Firestore
+                    "topCategories": topCategories,
                     "monthlyChange": monthlyChange,
                     "updatedAt": FieldValue.serverTimestamp()
                 ]
@@ -618,7 +616,7 @@ class FirestoreManager: ObservableObject {
         
         // Tip 1: Highest spending category
         if let topCategory = sortedCategories.first {
-            let potentialSavings = topCategory.value * 0.15 // Suggest 15% reduction
+            let potentialSavings = topCategory.value * 0.15 
             tips.append([
                 "title": "Reduce \(topCategory.key) expenses",
                 "description": "You've spent $\(String(format: "%.2f", topCategory.value)) on \(topCategory.key) this month. Try reducing this by 15% to save $\(String(format: "%.2f", potentialSavings)).",

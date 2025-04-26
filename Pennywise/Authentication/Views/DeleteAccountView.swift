@@ -2,7 +2,7 @@
 //  DeleteAccountView.swift
 //  Pennywise
 //
-//  Updated 2025-04-25 – no password prompt
+//  Created by Arnav Varyani on 4/8/25.
 //
 
 import SwiftUI
@@ -36,20 +36,15 @@ struct DeleteAccountView: View {
                         .fontWeight(.bold)
                         .foregroundColor(AppTheme.textColor)
 
-                    // Warning box
                     warningBox
 
-                    // “DELETE” confirmation field
                     confirmationField
 
-                    // Error banner (if any)
                     if !errorMessage.isEmpty { errorBanner }
 
-                    // Delete button
                     deleteButton
                         .padding(.top, 10)
 
-                    // Cancel button
                     Button("Cancel") {
                         presentationMode.wrappedValue.dismiss()
                     }
@@ -158,7 +153,6 @@ struct DeleteAccountView: View {
         .disabled(!isDeleteButtonEnabled || isLoading)
     }
 
-    // MARK: - Helpers --------------------------------------------------------
 
     private func bulletPoint(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
