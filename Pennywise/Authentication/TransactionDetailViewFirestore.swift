@@ -388,9 +388,6 @@ struct TransactionDetailViewFirestore: View {
                     Text(selectedCategory)
                         .font(.body)
                         .foregroundColor(AppTheme.textColor)
-                    
-                    // Monthly budget percentage
-                    Text("15% of monthly budget")
                         .font(.caption)
                         .foregroundColor(AppTheme.textColor.opacity(0.6))
                 }

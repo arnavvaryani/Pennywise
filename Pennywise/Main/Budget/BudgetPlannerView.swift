@@ -13,8 +13,7 @@ struct BudgetPlannerView: View {
     @State private var isRefreshing: Bool = false
     @State private var animateCards: Bool = false
     @State private var isLoading: Bool = true
-    @State private var showingCategoryDetail = false
-    @State private var selectedCategoryId: String? = nil
+    @State private var selectedCategory: BudgetCategory? = nil // Directly using as sheet item
     @State private var categorySpending: [String: Double] = [:]
     @State private var errorMessage: String? = nil
     @State private var showSuccessMessage = false
@@ -66,14 +65,6 @@ struct BudgetPlannerView: View {
         }
     }
     
-    // Computed property to get the selected category
-    private var selectedCategory: BudgetCategory? {
-        if let id = selectedCategoryId {
-            return categories.first(where: { $0.id == id })
-        }
-        return nil
-    }
-    
     var body: some View {
         ZStack {
             // Background gradient
@@ -98,19 +89,14 @@ struct BudgetPlannerView: View {
         .sheet(isPresented: $showAddCategory) {
             AddBudgetCategoryView(onAdd: addCategory)
         }
-        .sheet(isPresented: $showingCategoryDetail, onDismiss: {
-            // Clear selection when sheet is dismissed
-            selectedCategoryId = nil
-        }) {
-            if let category = selectedCategory {
-                CategoryDetailView(
-                    category: category,
-                    onUpdate: { updatedCategory in
-                        updateCategory(updatedCategory)
-                    },
-                    plaidManager: plaidManager
-                )
-            }
+        .sheet(item: $selectedCategory) { category in
+            CategoryDetailView(
+                category: category,
+                onUpdate: { updatedCategory in
+                    updateCategory(updatedCategory)
+                },
+                plaidManager: plaidManager
+            )
         }
         .navigationTitle("Budget")
         .navigationBarTitleDisplayMode(.inline)
@@ -411,7 +397,7 @@ struct BudgetPlannerView: View {
             if totalBudget > 0 {
                 // Pie chart visualization
                 HStack {
-                    // Chart
+                    // Chart (made non-interactive)
                     ZStack {
                         ForEach(0..<categories.count, id: \.self) { index in
                             PieSlice(
@@ -419,14 +405,7 @@ struct BudgetPlannerView: View {
                                 endAngle: calculateEndAngle(for: index)
                             )
                             .fill(categories[index].color)
-                            .onTapGesture {
-                                // First set the selected category ID
-                                selectedCategoryId = categories[index].id
-                                // Then after a brief delay, show the sheet
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                    showingCategoryDetail = true
-                                }
-                            }
+                            // Remove interactive gesture - pie chart should be display-only
                         }
                         
                         // Center circle
@@ -448,24 +427,30 @@ struct BudgetPlannerView: View {
                     }
                     .frame(width: 150, height: 150)
                     
-                    // Legend
+                    // Legend with clickable items
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(categories.prefix(5)) { category in
-                            HStack(spacing: 8) {
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(category.color)
-                                    .frame(width: 12, height: 12)
-                                
-                                Text(category.name)
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Spacer()
-                                
-                                Text("\(Int(category.amount / totalBudget * 100))%")
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            Button(action: {
+                                // Set selected category directly which triggers sheet
+                                selectedCategory = category
+                            }) {
+                                HStack(spacing: 8) {
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(category.color)
+                                        .frame(width: 12, height: 12)
+                                    
+                                    Text(category.name)
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor)
+                                    
+                                    Spacer()
+                                    
+                                    Text("\(Int(category.amount / totalBudget * 100))%")
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                                }
                             }
+                            .buttonStyle(PlainButtonStyle())
                         }
                         
                         if categories.count > 5 {
@@ -509,12 +494,8 @@ struct BudgetPlannerView: View {
                         category: category,
                         spent: calculateSpentForCategory(category),
                         onTap: {
-                            // First set the selected category ID
-                            selectedCategoryId = category.id
-                            // Then after a brief delay, show the sheet
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                showingCategoryDetail = true
-                            }
+                            // Set selected category directly which triggers sheet via .sheet(item:)
+                            selectedCategory = category
                         },
                         onAmountChange: { newAmount in
                             updateCategoryAmount(category, newAmount)
@@ -1143,4 +1124,3 @@ struct ScaleButtonStyle: ButtonStyle {
             .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
-

@@ -14,7 +14,7 @@ struct BudgetCategoryRow: View {
     let onAmountChange: (Double) -> Void
     let onDelete: () -> Void
     
-    @State private var isEditing = false
+    // Remove isEditing since we no longer have the pencil icon
     @State private var editedAmount: String = ""
     
     var progress: Double {
@@ -69,50 +69,15 @@ struct BudgetCategoryRow: View {
                     
                     Spacer()
                     
-                    // Amount with edit button
-                    if isEditing {
-                        HStack {
-                            Text("$")
-                                .foregroundColor(AppTheme.textColor.opacity(0.8))
-                            
-                            TextField("Amount", text: $editedAmount, onCommit: {
-                                if let amount = Double(editedAmount) {
-                                    onAmountChange(amount)
-                                }
-                                isEditing = false
-                            })
-                            .keyboardType(.decimalPad)
+                    // Amount display without edit button
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("$\(Int(category.amount))")
+                            .font(.headline)
                             .foregroundColor(AppTheme.textColor)
-                            .frame(width: 80)
-                            .multilineTextAlignment(.trailing)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(AppTheme.primaryGreen.opacity(0.2))
-                        .cornerRadius(8)
-                    } else {
-                        HStack(spacing: 10) {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("$\(Int(category.amount))")
-                                    .font(.headline)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Text("\(Int(category.amount > 0 ? (spent / category.amount * 100) : 0))%")
-                                    .font(.caption)
-                                    .foregroundColor(statusColor)
-                            }
-                            
-                            Button(action: {
-                                editedAmount = String(format: "%.0f", category.amount)
-                                isEditing = true
-                            }) {
-                                Image(systemName: "pencil")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
-                                    .padding(6)
-                                    .background(Circle().fill(AppTheme.cardBackground))
-                            }
-                        }
+                        
+                        Text("\(Int(category.amount > 0 ? (spent / category.amount * 100) : 0))%")
+                            .font(.caption)
+                            .foregroundColor(statusColor)
                     }
                 }
                 
@@ -139,6 +104,7 @@ struct BudgetCategoryRow: View {
                                 .font(.system(size: 12))
                                 .foregroundColor(Color(hex: "#FF5757"))
                         }
+                        .buttonStyle(PlainButtonStyle())
                         
                         Spacer()
                         
