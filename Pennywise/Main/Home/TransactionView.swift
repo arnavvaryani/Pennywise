@@ -1,5 +1,5 @@
 //
-//  NewTransactionView.swift
+//  TransactionView.swift
 //  Pennywise
 //
 //  Created by Arnav Varyani on 4/11/25.
@@ -232,8 +232,6 @@ struct TransactionView: View {
                 
                 ScrollView {
                     VStack(spacing: 20) {
-                        // Cash transaction toggle
-                        cashTransactionToggle
                         
                         // Transaction details section
                         transactionDetailsSection
@@ -292,30 +290,7 @@ struct TransactionView: View {
             }
         )
     }
-    
-    // MARK: - UI Components
-    
-    private var cashTransactionToggle: some View {
-        HStack {
-            Image(systemName: "banknote")
-                .foregroundColor(AppTheme.primaryGreen)
-                .font(.system(size: 24))
-            
-            Text("Cash Transaction")
-                .font(.headline)
-                .foregroundColor(AppTheme.textColor)
-            
-            Spacer()
-            
-            Toggle("", isOn: $viewModel.isCashTransaction)
-                .toggleStyle(SwitchToggleStyle(tint: AppTheme.primaryGreen))
-                .labelsHidden()
-        }
-        .padding()
-        .background(AppTheme.cardBackground)
-        .cornerRadius(12)
-    }
-    
+     
     private var transactionDetailsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Transaction Details")

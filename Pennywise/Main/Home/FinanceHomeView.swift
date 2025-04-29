@@ -88,19 +88,20 @@ struct FinanceHomeView: View {
             profileSheetView
         }
         .sheet(item: $selectedTransaction) { transaction in
-            // Check if this is a manual transaction before showing detail view
-            if manualTransactionIds.contains(transaction.id) {
-                ManualTransactionDetailView(transaction: transaction)
-                    .environmentObject(plaidManager)
-            } else {
-                TransactionDetailViewFirestore(transaction: transaction)
-                    .environmentObject(plaidManager)
-            }
-        }
+               // Check if this is a manual transaction before showing detail view
+               if manualTransactionIds.contains(transaction.id) {
+                   ManualTransactionDetailView(transaction: transaction)
+                       .environmentObject(plaidManager)
+               } else {
+                   TransactionDetailViewFirestore(transaction: transaction)
+                       .environmentObject(plaidManager)
+               }
+           }
         .sheet(item: $selectedAccount) { account in
             AccountDetailView(account: account)
                 .environmentObject(plaidManager)
         }
+
         .onAppear {
             // Load previously stored manual transaction IDs
             loadManualTransactionIds()
@@ -279,8 +280,9 @@ struct FinanceHomeView: View {
                     Button(action: {
                         selectedTransaction = transaction
                     }) {
-                        // Check if this is a cash transaction
+                        // Enhanced check for cash transactions
                         let isCash = transaction.accountId == "cash" || manualTransactionIds.contains(transaction.id)
+ 
                         
                         TransactionRow(transaction: transaction, isCashTransaction: isCash)
                             .padding(.horizontal)
@@ -290,6 +292,16 @@ struct FinanceHomeView: View {
             }
         }
     }
+
+    private func loadManualTransactionIds() {
+        if let savedIds = UserDefaults.standard.stringArray(forKey: "manualTransactionIds") {
+            manualTransactionIds = Set(savedIds)
+            print("Loaded manual transaction IDs: \(manualTransactionIds)")
+        } else {
+            print("No manual transaction IDs found in UserDefaults")
+        }
+    }
+
     
     private func emptyTransactionsView(for period: String) -> some View {
         VStack(spacing: 20) {
@@ -491,13 +503,6 @@ struct FinanceHomeView: View {
     
     // MARK: - Helper Methods for Manual Transactions
     
-    // Load previously saved manual transaction IDs
-    private func loadManualTransactionIds() {
-        if let savedIds = UserDefaults.standard.stringArray(forKey: "manualTransactionIds") {
-            manualTransactionIds = Set(savedIds)
-        }
-    }
-    
     // Save manual transaction IDs to UserDefaults
     private func saveManualTransactionIds() {
         UserDefaults.standard.set(Array(manualTransactionIds), forKey: "manualTransactionIds")
@@ -527,11 +532,13 @@ struct FinanceHomeView: View {
         }
     }
     
-    // MARK: - Functions
     private func addTransaction(transaction: Transaction) {
-        // Create new transaction - use "cash" as the accountId to distinguish
+        // Create a transaction ID for the new manual transaction
+        let transactionId = UUID().uuidString
+        
+        // Create a Plaid transaction format but clearly mark it as cash
         let newTransaction = PlaidTransaction(
-            id: UUID().uuidString,
+            id: transactionId,
             name: transaction.title,
             amount: transaction.amount,
             date: transaction.date,
@@ -541,8 +548,8 @@ struct FinanceHomeView: View {
             pending: false
         )
         
-        // Mark as manual transaction
-        manualTransactionIds.insert(newTransaction.id)
+        // Mark as manual transaction in UserDefaults
+        manualTransactionIds.insert(transactionId)
         saveManualTransactionIds()
         
         // Add to local state
@@ -946,6 +953,8 @@ struct ProfileOptionRow: View {
 struct AllTransactionsView: View {
     @EnvironmentObject var plaidManager: PlaidManager
     @State private var selectedTransaction: PlaidTransaction? = nil
+    // Add this state to track manual transactions
+    @State private var manualTransactionIds: Set<String> = []
     
     var body: some View {
         ZStack {
@@ -962,7 +971,9 @@ struct AllTransactionsView: View {
                                 Button(action: {
                                     selectedTransaction = transaction
                                 }) {
-                                    TransactionRow(transaction: transaction)
+                                    // Check if it's a cash transaction
+                                    let isCash = transaction.accountId == "cash" || manualTransactionIds.contains(transaction.id)
+                                    TransactionRow(transaction: transaction, isCashTransaction: isCash)
                                         .padding(.horizontal)
                                 }
                                 .buttonStyle(PlainButtonStyle())
@@ -978,9 +989,25 @@ struct AllTransactionsView: View {
             .toolbarBackground(Color(hex: "#161616"), for: .navigationBar)
             
             .sheet(item: $selectedTransaction) { transaction in
-                TransactionDetailViewFirestore(transaction: transaction)
-                    .environmentObject(plaidManager)
+                if manualTransactionIds.contains(transaction.id) || transaction.accountId == "cash" {
+                    ManualTransactionDetailView(transaction: transaction)
+                        .environmentObject(plaidManager)
+                } else {
+                    TransactionDetailViewFirestore(transaction: transaction)
+                        .environmentObject(plaidManager)
+                }
             }
+        }
+        .onAppear {
+            // Load manual transaction IDs when view appears
+            loadManualTransactionIds()
+        }
+    }
+    
+    // Load previously saved manual transaction IDs
+    private func loadManualTransactionIds() {
+        if let savedIds = UserDefaults.standard.stringArray(forKey: "manualTransactionIds") {
+            manualTransactionIds = Set(savedIds)
         }
     }
 }
@@ -1212,59 +1239,8 @@ struct AccountDetailView: View {
                                         .padding(.horizontal)
                                 }
                                 
-                                if accountTransactions.count > 5 {
-                                    Button(action: {
-                                        // Show all transactions for this account
-                                    }) {
-                                        Text("View All Transactions")
-                                            .font(.subheadline)
-                                            .foregroundColor(AppTheme.primaryGreen)
-                                            .padding()
-                                            .frame(maxWidth: .infinity)
-                                            .background(AppTheme.primaryGreen.opacity(0.1))
-                                            .cornerRadius(16)
-                                    }
-                                    .padding(.horizontal)
-                                    .buttonStyle(ScaleButtonStyle())
-                                }
+                              
                             }
-                        }
-                        
-                        // Action buttons
-                        HStack(spacing: 16) {
-                            Button(action: {
-                                // Refresh account
-                            }) {
-                                Label("Refresh", systemImage: "arrow.clockwise")
-                                    .font(.subheadline)
-                                    .foregroundColor(AppTheme.textColor)
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                    .background(AppTheme.cardBackground)
-                                    .cornerRadius(16)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 16)
-                                            .stroke(AppTheme.cardStroke, lineWidth: 1)
-                                    )
-                            }
-                            .buttonStyle(ScaleButtonStyle())
-                            
-                            Button(action: {
-                                // Disconnect account
-                            }) {
-                                Label("Disconnect", systemImage: "rectangle.portrait.and.arrow.right")
-                                    .font(.subheadline)
-                                    .foregroundColor(AppTheme.expenseColor)
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                    .background(AppTheme.cardBackground)
-                                    .cornerRadius(16)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 16)
-                                            .stroke(AppTheme.cardStroke, lineWidth: 1)
-                                    )
-                            }
-                            .buttonStyle(ScaleButtonStyle())
                         }
                         .padding(.horizontal)
                     }

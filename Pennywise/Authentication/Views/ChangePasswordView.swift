@@ -1,3 +1,9 @@
+//
+//  ChangePasswordView.swift
+//  Pennywise
+//
+//  Created by Arnav Varyani on 4/8/25.
+//
 import SwiftUI
 import Firebase
 import FirebaseAuth
@@ -16,6 +22,15 @@ struct ChangePasswordView: View {
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     
+    // Keyboard visibility tracking
+    @State private var keyboardHeight: CGFloat = 0
+    @FocusState private var activeField: Field?
+    
+    // Form field identifiers
+    enum Field {
+        case currentPassword, newPassword, confirmPassword
+    }
+    
     // Simplified password validation states
     @State private var isPasswordLengthValid = false
     @State private var hasUppercase = false
@@ -27,42 +42,63 @@ struct ChangePasswordView: View {
             AppTheme.backgroundGradient
                 .edgesIgnoringSafeArea(.all)
             
-            ScrollView {
-                VStack(spacing: 25) {
-                    headerSection
-                    
-                    passwordFormSection
-                    
-                    if !errorMessage.isEmpty {
-                        errorSection
-                    }
-                    
-                    if !successMessage.isEmpty {
-                        successSection
-                    }
-                    
-                    // Simplified password requirements section
-                    passwordRequirementsSection
-                    
-                    changePasswordButton
-                    
-                    // Back button for when completed successfully
-                    if !successMessage.isEmpty {
-                        Button(action: {
-                            presentationMode.wrappedValue.dismiss()
-                        }) {
-                            Text("Back to Settings")
-                                .font(.headline)
-                                .foregroundColor(AppTheme.backgroundColor)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(AppTheme.accentBlue)
-                                .cornerRadius(12)
+            // Main content in a ScrollView with keyboard awareness
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(spacing: 25) {
+                        headerSection
+                        
+                        passwordFormSection
+                        
+                        if !errorMessage.isEmpty {
+                            errorSection
                         }
-                        .padding(.top, 10)
+                        
+                        if !successMessage.isEmpty {
+                            successSection
+                        }
+                        
+                        // Simplified password requirements section
+                        passwordRequirementsSection
+                            .id("requirements")
+                        
+                        changePasswordButton
+                            .id("changeButton")
+                        
+                        // Back button for when completed successfully
+                        if !successMessage.isEmpty {
+                            Button(action: {
+                                presentationMode.wrappedValue.dismiss()
+                            }) {
+                                Text("Back to Settings")
+                                    .font(.headline)
+                                    .foregroundColor(AppTheme.backgroundColor)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(AppTheme.accentBlue)
+                                    .cornerRadius(12)
+                            }
+                            .padding(.top, 10)
+                        }
+                        
+                        // Extra padding at bottom to ensure content is scrollable above keyboard
+                        Spacer()
+                            .frame(height: keyboardHeight > 0 ? keyboardHeight + 20 : 100)
+                    }
+                    .padding()
+                }
+                .onChange(of: activeField) { field in
+                    if let field = field {
+                        // When field changes, scroll to keep active field visible
+                        withAnimation {
+                            if field == .confirmPassword {
+                                scrollProxy.scrollTo("requirements", anchor: .top)
+                            } else if field == .newPassword {
+                                scrollProxy.scrollTo("newPassword", anchor: .top)
+                            }
+                        }
                     }
                 }
-                .padding()
             }
         }
         .alert(isPresented: $showAlert) {
@@ -82,6 +118,18 @@ struct ChangePasswordView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: newPassword) { value in
             validatePassword(value)
+        }
+        // Keyboard appearance monitoring
+        .onAppear {
+            NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { notification in
+                if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                    keyboardHeight = keyboardFrame.height
+                }
+            }
+            
+            NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
+                keyboardHeight = 0
+            }
         }
     }
     
@@ -119,22 +167,28 @@ struct ChangePasswordView: View {
             secureFieldWithIcon(
                 title: "Current Password",
                 text: $currentPassword,
-                icon: "lock.fill"
+                icon: "lock.fill",
+                field: .currentPassword
             )
+            .id("currentPassword")
             
             // New password field
             secureFieldWithIcon(
                 title: "New Password",
                 text: $newPassword,
-                icon: "lock.shield"
+                icon: "lock.shield",
+                field: .newPassword
             )
+            .id("newPassword")
             
             // Confirm new password field
             secureFieldWithIcon(
                 title: "Confirm New Password",
                 text: $confirmPassword,
-                icon: "checkmark.shield"
+                icon: "checkmark.shield",
+                field: .confirmPassword
             )
+            .id("confirmPassword")
         }
     }
     
@@ -226,7 +280,7 @@ struct ChangePasswordView: View {
     
     // MARK: - Helper Components
     
-    private func secureFieldWithIcon(title: String, text: Binding<String>, icon: String) -> some View {
+    private func secureFieldWithIcon(title: String, text: Binding<String>, icon: String, field: Field) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.headline)
@@ -243,13 +297,28 @@ struct ChangePasswordView: View {
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
                     .textContentType(.password)
+                    .focused($activeField, equals: field)
+                    .submitLabel(field == .confirmPassword ? .done : .next)
+                    .onSubmit {
+                        switch field {
+                        case .currentPassword:
+                            activeField = .newPassword
+                        case .newPassword:
+                            activeField = .confirmPassword
+                        case .confirmPassword:
+                            activeField = nil
+                            if isPasswordValid() {
+                                changePassword()
+                            }
+                        }
+                    }
             }
             .padding()
             .background(AppTheme.cardBackground)
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(AppTheme.cardStroke, lineWidth: 1)
+                    .stroke(activeField == field ? AppTheme.accentPurple : AppTheme.cardStroke, lineWidth: 1)
             )
         }
     }
@@ -288,6 +357,9 @@ struct ChangePasswordView: View {
     // MARK: - Password Change Function
     
     private func changePassword() {
+        // Dismiss keyboard
+        activeField = nil
+        
         // Reset messages
         errorMessage = ""
         successMessage = ""
@@ -302,6 +374,7 @@ struct ChangePasswordView: View {
         isLoading = true
         
         // Use the AuthenticationService to change the password
+        // This uses Firebase Auth to update the password in the backend
         authService.changePassword(currentPassword: currentPassword, newPassword: newPassword) { result in
             DispatchQueue.main.async {
                 isLoading = false
@@ -349,14 +422,5 @@ struct ChangePasswordView: View {
         } else {
             errorMessage = "Error: \(error.localizedDescription)"
         }
-    }
-}
-
-struct ChangePasswordView_Previews: PreviewProvider {
-    static var previews: some View {
-        NavigationView {
-            ChangePasswordView()
-        }
-        .preferredColorScheme(.dark)
     }
 }

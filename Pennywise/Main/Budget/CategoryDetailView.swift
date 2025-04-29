@@ -68,24 +68,6 @@ struct CategoryDetailView: View {
                             // Spending breakdown
                             spendingBreakdownSection
                             
-                            // Insights button
-                            if !transactions.isEmpty {
-                                Button(action: {
-                                    generateCategoryInsights()
-                                    showingInsights = true
-                                }) {
-                                    Label("View Spending Insights", systemImage: "lightbulb.fill")
-                                        .font(.headline)
-                                        .foregroundColor(.white)
-                                        .padding()
-                                        .frame(maxWidth: .infinity)
-                                        .background(AppTheme.accentBlue)
-                                        .cornerRadius(12)
-                                }
-                                .buttonStyle(ScaleButtonStyle())
-                                .padding(.top, 10)
-                            }
-                            
                             // Delete button
                             Button(action: {
                                 showingDeleteAlert = true

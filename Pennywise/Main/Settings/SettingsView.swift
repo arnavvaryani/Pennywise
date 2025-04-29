@@ -7,6 +7,7 @@
 
 import SwiftUI
 import LocalAuthentication
+import Firebase
 import FirebaseAuth
 import FirebaseFirestore
 
@@ -37,6 +38,7 @@ struct SettingsView: View {
     @State private var exportCompleteMessage: String? = nil
     @State private var showingShareSheet = false
     @State private var fileURLToShare: URL? = nil
+    @State private var profileImage: UIImage?
     
     // Lists for pickers
     let monthDays = Array(1...31).map { String($0) }
@@ -108,6 +110,7 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             checkBiometricAvailability()
+            loadProfileImageFromLocalStorage()
         }
         .alert(item: Binding<ExportAlert?>(
             get: {
@@ -138,18 +141,12 @@ struct SettingsView: View {
                         .fill(AppTheme.accentPurple.opacity(0.3))
                         .frame(width: 75, height: 75)
                     
-                    if let photoURL = authService.user?.photoURL, let url = URL(string: photoURL.absoluteString) {
-                        AsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 75, height: 75)
-                                .clipShape(Circle())
-                        } placeholder: {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 32))
-                                .foregroundColor(AppTheme.textColor)
-                        }
+                    if let profileImage = profileImage {
+                        Image(uiImage: profileImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 75, height: 75)
+                            .clipShape(Circle())
                     } else {
                         Image(systemName: "person.fill")
                             .font(.system(size: 32))
@@ -764,6 +761,14 @@ struct SettingsView: View {
     }
     
     // MARK: - Helper Methods
+    
+    private func loadProfileImageFromLocalStorage() {
+        if let imageData = UserDefaults.standard.data(forKey: "userProfileImageData"),
+           let uiImage = UIImage(data: imageData) {
+            self.profileImage = uiImage
+        }
+    }
+    
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -1250,9 +1255,6 @@ struct SettingsView: View {
             }
         }
     }
-    
-    // These methods are no longer used as we fetch directly from Firebase
-    // They remain here as fallbacks if Firebase fetching fails
     
     // Format date for readable display
     private func formatReadableDate(_ date: Date) -> String {

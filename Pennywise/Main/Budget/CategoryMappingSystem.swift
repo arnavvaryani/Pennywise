@@ -470,3 +470,128 @@ struct CategoryMappingEditorView: View {
         presentationMode.wrappedValue.dismiss()
     }
 }
+
+class PlaidCategoryMapper {
+    static let shared = PlaidCategoryMapper()
+    
+    // Map of Plaid categories to your budget categories
+    private var categoryMappings: [String: String] = [
+        // Food & Dining
+        "Food and Drink": "Food & Dining",
+        "Restaurants": "Food & Dining",
+        "Coffee Shop": "Food & Dining",
+        
+        // Shopping
+        "Shopping": "Shopping",
+        "General Merchandise": "Shopping",
+        
+        // Transportation
+        "Travel": "Transportation",
+        "Taxi": "Transportation",
+        "Public Transportation": "Transportation",
+        
+        // Bills & Utilities
+        "Utilities": "Bills & Utilities",
+        "Rent": "Housing",
+        "Mortgage": "Housing",
+        
+        // Entertainment
+        "Entertainment": "Entertainment",
+        "Movies": "Entertainment",
+        "Music": "Entertainment",
+        
+        // Health & Fitness
+        "Healthcare": "Health & Fitness",
+        "Pharmacy": "Health & Fitness",
+        
+        // Savings & Investment
+        "Transfer": "Savings",
+        "Investment": "Investments",
+        
+        // Income categories
+        "Deposit": "Income",
+        "Payroll": "Income"
+    ]
+    
+    // Get budget category for a Plaid category
+    func getBudgetCategory(for plaidCategory: String) -> String {
+        // First check for direct mapping
+        if let budgetCategory = categoryMappings[plaidCategory] {
+            return budgetCategory
+        }
+        
+        // Check for partial matches
+        for (plaidKey, budgetValue) in categoryMappings {
+            if plaidCategory.lowercased().contains(plaidKey.lowercased()) {
+                return budgetValue
+            }
+        }
+        
+        // Default fallback
+        return "Other"
+    }
+    
+    // Get icon for a budget category
+    func getIconForCategory(_ category: String) -> String {
+        let c = category.lowercased()
+        
+        if c.contains("food") || c.contains("dining") {
+            return "fork.knife"
+        } else if c.contains("shop") {
+            return "cart.fill"
+        } else if c.contains("transport") {
+            return "car.fill"
+        } else if c.contains("bill") || c.contains("utilities") {
+            return "bolt.fill"
+        } else if c.contains("entertain") {
+            return "play.tv"
+        } else if c.contains("health") {
+            return "heart.fill"
+        } else if c.contains("housing") || c.contains("rent") {
+            return "house.fill"
+        } else if c.contains("income") {
+            return "arrow.down.circle.fill"
+        } else if c.contains("saving") {
+            return "banknote.fill"
+        } else if c.contains("investment") {
+            return "chart.line.uptrend.xyaxis"
+        }
+        
+        return "tag.fill" // Default
+    }
+    
+    // Get color for a budget category
+    func getColorForCategory(_ category: String) -> Color {
+        let c = category.lowercased()
+        
+        if c.contains("food") || c.contains("dining") {
+            return AppTheme.primaryGreen
+        } else if c.contains("shop") {
+            return AppTheme.accentBlue
+        } else if c.contains("transport") {
+            return AppTheme.accentPurple
+        } else if c.contains("bill") || c.contains("utilities") {
+            return Color(hex: "#9370DB")
+        } else if c.contains("entertain") {
+            return Color(hex: "#FFD700")
+        } else if c.contains("health") {
+            return Color(hex: "#FF5757")
+        } else if c.contains("housing") || c.contains("rent") {
+            return Color(hex: "#CD853F")
+        } else if c.contains("income") {
+            return AppTheme.primaryGreen
+        } else if c.contains("saving") {
+            return Color(hex: "#50C878")
+        } else if c.contains("investment") {
+            return Color(hex: "#4682B4")
+        }
+        
+        // Generate a consistent color based on the category name
+        let hash = category.hashValue
+        return Color(
+            hue: Double(abs(hash % 256)) / 256.0,
+            saturation: 0.7,
+            brightness: 0.9
+        )
+    }
+}

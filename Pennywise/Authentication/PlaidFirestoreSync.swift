@@ -73,6 +73,7 @@ class PlaidFirestoreSync: ObservableObject {
         syncTimer?.invalidate()
         syncTimer = nil
     }
+     
     
     // MARK: - Sync Operations
     
@@ -280,37 +281,86 @@ class PlaidFirestoreSync: ObservableObject {
     
     
     /// Syncs budget data to Firestore
-    func syncBudgetData(completion: ((Bool) -> Void)? = nil) {
-        // Get budget categories from Plaid Manager
+    func syncBudgetData(completion: @escaping ((Bool) -> Void)) {
+        // Get budget categories from Plaid Manager with proper mappings
         let categories = plaidManager.getBudgetCategories()
         
-        // Sync each category
+        // Sync each category with Firestore
         let group = DispatchGroup()
         var overallSuccess = true
         
-        for category in categories {
-            group.enter()
+        // Check existing categories to avoid duplicates
+        guard let userId = Auth.auth().currentUser?.uid else {
+            completion(false)
+            return
+        }
+        
+        let db = Firestore.firestore()
+        
+        // First, get existing categories
+        db.collection("users/\(userId)/budgetCategories").getDocuments { [weak self] snapshot, error in
+            guard let self = self else {
+                completion(false)
+                return
+            }
             
-            firestoreManager.saveBudgetCategory(category) { success in
+            if let error = error {
+                print("Error fetching categories: \(error.localizedDescription)")
+                completion(false)
+                return
+            }
+            
+            // Create a map of existing categories by name
+            var existingCategoriesByName: [String: String] = [:]
+            
+            if let documents = snapshot?.documents {
+                for document in documents {
+                    if let name = document.data()["name"] as? String {
+                        existingCategoriesByName[name.lowercased()] = document.documentID
+                    }
+                }
+            }
+            
+            // Process each category - update existing or create new
+            for category in categories {
+                group.enter()
+                
+                // Check if category already exists
+                if let docId = existingCategoriesByName[category.name.lowercased()] {
+                    // Update existing category
+                    self.firestoreManager.updateBudgetCategory(
+                        docId: docId,
+                        category: category
+                    ) { success in
+                        if !success {
+                            overallSuccess = false
+                        }
+                        group.leave()
+                    }
+                } else {
+                    // Create new category
+                    self.firestoreManager.saveBudgetCategory(category) { success in
+                        if !success {
+                            overallSuccess = false
+                        }
+                        group.leave()
+                    }
+                }
+            }
+            
+            // Update budget usage
+            group.enter()
+            self.firestoreManager.updateBudgetUsage { success in
                 if !success {
                     overallSuccess = false
                 }
                 group.leave()
             }
-        }
-        
-        // Update budget usage
-        group.enter()
-        firestoreManager.updateBudgetUsage { success in
-            if !success {
-                overallSuccess = false
+            
+            // When all operations complete
+            group.notify(queue: .main) {
+                completion(overallSuccess)
             }
-            group.leave()
-        }
-        
-        // When all operations complete
-        group.notify(queue: .main) {
-            completion?(overallSuccess)
         }
     }
     

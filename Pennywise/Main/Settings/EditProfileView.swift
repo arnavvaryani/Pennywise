@@ -7,11 +7,14 @@
 
 import SwiftUI
 import Firebase
-import FirebaseStorage
+import FirebaseFirestore
+import Combine
+import FirebaseAuth
 
 struct EditProfileView: View {
     @Binding var isPresented: Bool
     @StateObject private var authService = AuthenticationService.shared
+    @Environment(\.presentationMode) var presentationMode
     
     @State private var displayName = ""
     @State private var email = ""
@@ -21,8 +24,11 @@ struct EditProfileView: View {
     @State private var showError = false
     @State private var showImagePicker = false
     @State private var inputImage: UIImage?
-    @State private var profileImage: Image?
-    @State private var isUploadingImage = false
+    @State private var profileImage: UIImage?
+    @State private var displayProfileImage: Image?
+    
+    // UserDefaults keys for storing profile image
+    private let profileImageKey = "userProfileImageData"
     
     var body: some View {
         NavigationView {
@@ -33,8 +39,8 @@ struct EditProfileView: View {
                     VStack(spacing: 24) {
                         // Profile image
                         ZStack {
-                            if let profileImage = profileImage {
-                                profileImage
+                            if let displayProfileImage = displayProfileImage {
+                                displayProfileImage
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 120, height: 120)
@@ -72,7 +78,7 @@ struct EditProfileView: View {
                                 .font(.headline)
                                 .foregroundColor(AppTheme.textColor)
                             
-                            TextField("", text: $displayName)
+                            TextField("Enter your name", text: $displayName)
                                 .foregroundColor(AppTheme.textColor)
                                 .padding()
                                 .background(AppTheme.cardBackground)
@@ -154,12 +160,14 @@ struct EditProfileView: View {
             }
             .onAppear {
                 loadUserData()
+                loadProfileImageFromLocalStorage()
             }
             .alert(isPresented: $showSuccessAlert) {
                 Alert(
                     title: Text("Profile Updated"),
                     message: Text("Your profile has been updated successfully."),
                     dismissButton: .default(Text("OK")) {
+                        // Dismiss the view
                         isPresented = false
                     }
                 )
@@ -167,37 +175,36 @@ struct EditProfileView: View {
             .sheet(isPresented: $showImagePicker) {
                 ImagePicker(image: $inputImage)
             }
-            .onChange(of: inputImage) { _ in
-                loadImage()
+            .onChange(of: inputImage) { newImage in
+                if let newImage = newImage {
+                    // Store the UIImage for saving
+                    profileImage = newImage
+                    // Convert to SwiftUI Image for display
+                    displayProfileImage = Image(uiImage: newImage)
+                }
             }
         }
-    }
-    
-    private func loadImage() {
-        guard let inputImage = inputImage else { return }
-        profileImage = Image(uiImage: inputImage)
     }
     
     private func loadUserData() {
         if let user = authService.user {
             displayName = user.displayName ?? ""
             email = user.email ?? ""
-            
-            // Load profile image from Firebase if available
-            if let photoURL = user.photoURL {
-                loadProfileImage(from: photoURL)
-            }
         }
     }
     
-    private func loadProfileImage(from url: URL) {
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data, let uiImage = UIImage(data: data) {
-                DispatchQueue.main.async {
-                    self.profileImage = Image(uiImage: uiImage)
-                }
-            }
-        }.resume()
+    private func loadProfileImageFromLocalStorage() {
+        if let imageData = UserDefaults.standard.data(forKey: profileImageKey),
+           let uiImage = UIImage(data: imageData) {
+            profileImage = uiImage
+            displayProfileImage = Image(uiImage: uiImage)
+        }
+    }
+    
+    private func saveProfileImageToLocalStorage(_ image: UIImage) {
+        if let imageData = image.jpegData(compressionQuality: 0.7) {
+            UserDefaults.standard.set(imageData, forKey: profileImageKey)
+        }
     }
     
     private func updateProfile() {
@@ -209,116 +216,58 @@ struct EditProfileView: View {
         
         isLoading = true
         
-        // Function to complete the profile update
-        let completeProfileUpdate = {
-            // Update user display name in Firebase Auth
-            let changeRequest = user.createProfileChangeRequest()
-            changeRequest.displayName = displayName
+        // If we have a profile image, save it to local storage
+        if let profileImage = profileImage {
+            saveProfileImageToLocalStorage(profileImage)
+        }
+        
+        // Update user display name in Firebase Auth
+        let changeRequest = user.createProfileChangeRequest()
+        changeRequest.displayName = displayName
+        
+        changeRequest.commitChanges { error in
             
-            changeRequest.commitChanges { error in
-                if let error = error {
-                    DispatchQueue.main.async {
-                        isLoading = false
-                        errorMessage = "Error updating profile: \(error.localizedDescription)"
-                        showError = true
-                    }
-                } else {
-                    // Update user data in Firestore
-                    let db = Firestore.firestore()
-                    db.collection("users").document(user.uid).updateData([
-                        "name": displayName,
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ]) { firestoreError in
-                        DispatchQueue.main.async {
-                            isLoading = false
-                            
-                            if let firestoreError = firestoreError {
-                                errorMessage = "Error updating Firestore: \(firestoreError.localizedDescription)"
-                                showError = true
-                            } else {
-                                showSuccessAlert = true
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // If there's a new profile image, upload it first
-        if let inputImage = inputImage {
-            uploadProfileImage(inputImage) { result in
-                switch result {
-                case .success(let url):
-                    // Update user photo URL in Firebase Auth
-                    let changeRequest = user.createProfileChangeRequest()
-                    changeRequest.photoURL = url
-                    
-                    changeRequest.commitChanges { error in
-                        if let error = error {
-                            DispatchQueue.main.async {
-                                isLoading = false
-                                errorMessage = "Error updating profile image: \(error.localizedDescription)"
-                                showError = true
-                            }
-                        } else {
-                            // Continue with profile update
-                            completeProfileUpdate()
-                        }
-                    }
-                    
-                case .failure(let error):
-                    DispatchQueue.main.async {
-                        isLoading = false
-                        errorMessage = "Error uploading image: \(error.localizedDescription)"
-                        showError = true
-                    }
-                }
-            }
-        } else {
-            // No new image, just update the profile
-            completeProfileUpdate()
-        }
-    }
-    
-    private func uploadProfileImage(_ image: UIImage, completion: @escaping (Result<URL, Error>) -> Void) {
-        guard let user = authService.user else {
-            completion(.failure(NSError(domain: "EditProfileView", code: 0, userInfo: [NSLocalizedDescriptionKey: "User not logged in"])))
-            return
-        }
-        
-        // Resize image for storage efficiency
-        guard let resizedImageData = image.jpegData(compressionQuality: 0.5) else {
-            completion(.failure(NSError(domain: "EditProfileView", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to compress image"])))
-            return
-        }
-        
-        // Create a reference to the file you want to upload
-        let storageRef = Storage.storage().reference()
-        let profileRef = storageRef.child("profile_images/\(user.uid).jpg")
-        
-        // Upload the file
-        let metadata = StorageMetadata()
-        metadata.contentType = "image/jpeg"
-        
-        let uploadTask = profileRef.putData(resizedImageData, metadata: metadata) { metadata, error in
             if let error = error {
-                completion(.failure(error))
-                return
-            }
-            
-            // Get download URL
-            profileRef.downloadURL { url, error in
-                if let error = error {
-                    completion(.failure(error))
-                    return
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    self.errorMessage = "Error updating profile: \(error.localizedDescription)"
+                    self.showError = true
                 }
+            } else {
+                // Create or update user record in Firestore
+                let db = Firestore.firestore()
                 
-                guard let downloadURL = url else {
-                    completion(.failure(NSError(domain: "EditProfileView", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to get download URL"])))
-                    return
+                // Prepare the user data
+                var userData: [String: Any] = [
+                    "name": self.displayName,
+                    "email": user.email ?? "",
+                    "updatedAt": FieldValue.serverTimestamp()
+                ]
+                
+                // Use setData with merge option to ensure document is created if it doesn't exist
+                db.collection("users").document(user.uid).setData(userData, merge: true) { error in
+    
+                    
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        
+                        if let error = error {
+                            self.errorMessage = "Error updating Firestore: \(error.localizedDescription)"
+                            self.showError = true
+                            print("Firestore error: \(error.localizedDescription)")
+                        } else {
+                            // Manually synchronize the Auth Service's user object
+                            // This ensures changes are visible in Settings screen
+                            Auth.auth().currentUser?.reload { _ in
+                                DispatchQueue.main.async {
+                                    self.authService.user = Auth.auth().currentUser
+                                    self.showSuccessAlert = true
+                                    print("Profile updated successfully!")
+                                }
+                            }
+                        }
+                    }
                 }
-                
-                completion(.success(downloadURL))
             }
         }
     }

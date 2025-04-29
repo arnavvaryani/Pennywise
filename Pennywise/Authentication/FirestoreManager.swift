@@ -76,6 +76,37 @@ class FirestoreManager: ObservableObject {
         }
     }
     
+    func updateBudgetCategory(docId: String, category: BudgetCategory, completion: @escaping (Bool) -> Void) {
+        guard let userId = userId else {
+            error = NSError(domain: "FirestoreManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "User not signed in"])
+            completion(false)
+            return
+        }
+        
+        let categoryRef = db.collection("users/\(userId)/budgetCategories").document(docId)
+        
+        // Convert Color to hex string
+        let colorHex = category.color.hexString
+        
+        let data: [String: Any] = [
+            "name": category.name,
+            "amount": category.amount,
+            "icon": category.icon,
+            "color": colorHex,
+            "isEssential": isEssentialCategory(category.name),
+            "updatedAt": FieldValue.serverTimestamp()
+        ]
+        
+        categoryRef.updateData(data) { [weak self] error in
+            if let error = error {
+                self?.error = error
+                completion(false)
+            } else {
+                completion(true)
+            }
+        }
+    }
+    
     /// Syncs all Plaid transactions to Firestore
     func syncTransactions(_ transactions: [PlaidTransaction], completion: @escaping (Bool) -> Void) {
         guard let userId = userId else {

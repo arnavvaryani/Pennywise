@@ -222,18 +222,65 @@ class PlaidManager: ObservableObject {
     }
 
     func getBudgetCategories() -> [BudgetCategory] {
-        var list: [BudgetCategory] = []
-        let colors: [Color] = [AppTheme.primaryGreen, AppTheme.accentBlue, AppTheme.accentPurple]
-        let icons = ["fork.knife","cart.fill","car.fill","play.fill","heart.fill","bolt.fill"]
-        for (idx, (cat, amt)) in budgetCategories.enumerated() {
-            list.append(BudgetCategory(
-                name: cat,
-                amount: amt,
-                icon: icons[idx % icons.count],
-                color: colors[idx % colors.count]
+        var categories: [BudgetCategory] = []
+        let categoryMapper = PlaidCategoryMapper.shared
+        
+        // Group transactions by mapped budget categories
+        var categorySpending: [String: Double] = [:]
+        
+        for transaction in transactions {
+            // Map the Plaid category to a budget category
+            let budgetCategory = categoryMapper.getBudgetCategory(for: transaction.category)
+            
+            // Only add expenses (positive amount)
+            if transaction.amount > 0 {
+                categorySpending[budgetCategory, default: 0] += transaction.amount
+            }
+        }
+        
+        // Create budget categories based on actual spending
+        for (categoryName, amount) in categorySpending {
+            let icon = categoryMapper.getIconForCategory(categoryName)
+            let color = categoryMapper.getColorForCategory(categoryName)
+            
+            let category = BudgetCategory(
+                name: categoryName,
+                amount: amount * 1.1, // Set budget slightly higher than current spending
+                icon: icon,
+                color: color
+            )
+            
+            categories.append(category)
+        }
+        
+        // Add income category if not already present
+        if !categories.contains(where: { $0.name.lowercased().contains("income") }) {
+            categories.append(BudgetCategory(
+                name: "Income",
+                amount: calculateTotalIncome(), // Calculate monthly income
+                icon: "arrow.down.circle.fill",
+                color: AppTheme.primaryGreen
             ))
         }
-        return list
+        
+        return categories
+    }
+
+    private func calculateTotalIncome() -> Double {
+        // Get income transactions for current month
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.year, .month], from: now)
+        let startOfMonth = calendar.date(from: components)!
+        let nextMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth)!
+        let startOfNextMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: nextMonth))!
+        
+        // Sum income transactions (negative amounts)
+        let income = transactions
+            .filter { $0.date >= startOfMonth && $0.date < startOfNextMonth && $0.amount < 0 }
+            .reduce(0) { $0 + abs($1.amount) }
+        
+        return income > 0 ? income : 5000 // Default fallback if no income data
     }
 
     // MARK: - Link Presentation
