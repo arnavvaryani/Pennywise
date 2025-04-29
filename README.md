@@ -179,14 +179,6 @@ The app implements several security features:
 - **Secure Network Communication**: All API communication uses HTTPS
 - **Firebase Security Rules**: Proper Firestore security rules to protect user data
 
-## Contributing
-
-We welcome contributions to Pennywise! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
-
 ## Acknowledgements
 
 - [Firebase](https://firebase.google.com/) - Authentication and data storage
