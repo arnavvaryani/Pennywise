@@ -2,8 +2,6 @@
 
 Pennywise is a comprehensive personal finance management app built with SwiftUI, Firebase, and Plaid integration. It enables users to track expenses, manage budgets, gain financial insights, and securely connect to their bank accounts.
 
-![Pennywise App](https://via.placeholder.com/800x400.png?text=Pennywise+Finance+App)
-
 ## Features
 
 - **Secure Authentication**: Log in with email/password, Google Sign-In, and biometric authentication (Face ID/Touch ID)
