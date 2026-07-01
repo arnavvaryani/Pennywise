@@ -160,7 +160,11 @@ class TransactionViewModel: ObservableObject {
             )
         }
         
-        let finalAmount = isExpense ? -amountValue : amountValue
+        // Match the Plaid/Firestore sign convention used across the app:
+        // expenses are POSITIVE, income is NEGATIVE. (The manual entry form was
+        // previously inverted, so manual expenses were counted as income and
+        // vice-versa in spending totals, budgets, and insights.)
+        let finalAmount = isExpense ? amountValue : -amountValue
         let transactionCategory = isExpense ? selectedCategory : "Income"
         
         return Transaction(

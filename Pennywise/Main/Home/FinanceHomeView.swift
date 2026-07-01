@@ -53,7 +53,7 @@ struct FinanceHomeView: View {
     
     // Get transactions for the current month
     var currentMonthTransactions: [PlaidTransaction] {
-        let calendar = Calendar.current
+        let calendar = DateUtils.calendar
         let now = Date()
         let month = calendar.component(.month, from: now)
         let year = calendar.component(.year, from: now)
@@ -300,6 +300,59 @@ struct FinanceHomeView: View {
         } else {
             print("No manual transaction IDs found in UserDefaults")
         }
+        // Manual transactions are persisted in a separate `manualTransactions`
+        // collection but rebuilt-from-Plaid `plaidManager.transactions` does not
+        // include them, so without this load they disappear on relaunch.
+        loadManualTransactionsFromFirestore()
+    }
+
+    /// Loads manually-added cash transactions from Firestore and merges any that
+    /// aren't already present into the in-memory transaction list.
+    private func loadManualTransactionsFromFirestore() {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+
+        Firestore.firestore()
+            .collection("users/\(userId)/manualTransactions")
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error loading manual transactions: \(error.localizedDescription)")
+                    return
+                }
+                guard let documents = snapshot?.documents else { return }
+
+                let manual = documents.compactMap { document -> PlaidTransaction? in
+                    let data = document.data()
+                    guard
+                        let name = data["name"] as? String,
+                        let amount = data["amount"] as? Double,
+                        let dateTimestamp = data["date"] as? Timestamp,
+                        let merchantName = data["merchantName"] as? String,
+                        let accountId = data["accountId"] as? String
+                    else {
+                        return nil
+                    }
+                    return PlaidTransaction(
+                        id: document.documentID,
+                        name: name,
+                        amount: amount,
+                        date: dateTimestamp.dateValue(),
+                        category: effectiveTransactionCategory(data),
+                        merchantName: merchantName,
+                        accountId: accountId,
+                        pending: data["pending"] as? Bool ?? false
+                    )
+                }
+
+                guard !manual.isEmpty else { return }
+
+                DispatchQueue.main.async {
+                    let existingIds = Set(self.plaidManager.transactions.map { $0.id })
+                    let missing = manual.filter { !existingIds.contains($0.id) }
+                    guard !missing.isEmpty else { return }
+                    self.plaidManager.transactions.insert(contentsOf: missing, at: 0)
+                    self.manualTransactionIds.formUnion(missing.map { $0.id })
+                }
+            }
     }
 
     
@@ -541,7 +594,9 @@ struct FinanceHomeView: View {
             id: transactionId,
             name: transaction.title,
             amount: transaction.amount,
-            date: transaction.date,
+            // Normalize the locally-picked day to UTC midnight so it buckets into
+            // the same month as UTC-parsed Plaid transactions.
+            date: DateUtils.utcDay(fromLocalPickedDate: transaction.date),
             category: transaction.category,
             merchantName: transaction.merchant,
             accountId: "cash", // Use "cash" as the account ID for all cash transactions

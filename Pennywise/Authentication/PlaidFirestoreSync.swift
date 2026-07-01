@@ -147,30 +147,19 @@ class PlaidFirestoreSync: ObservableObject {
         }
     }
     
-    /// Syncs account data to Firestore
+    /// Syncs account data to Firestore.
     func syncAccountsToFirestore(completion: ((Bool) -> Void)? = nil) {
-        // If no accounts, fetch them first
-        if plaidManager.accounts.isEmpty {
-            plaidManager.prepareLinkController()
-            
-            // Give some time for accounts to be fetched, then sync
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                guard let self = self else {
-                    completion?(false)
-                    return
-                }
-                
-                // If we have accounts now, sync them
-                if !self.plaidManager.accounts.isEmpty {
-                    self.firestoreManager.syncAccounts(self.plaidManager.accounts, completion: completion ?? { _ in })
-                } else {
-                    completion?(false)
-                }
-            }
-        } else {
-            // Use existing accounts
-            firestoreManager.syncAccounts(plaidManager.accounts, completion: completion ?? { _ in })
+        guard !plaidManager.accounts.isEmpty else {
+            // Nothing to sync: either the user hasn't linked a bank yet, or accounts
+            // are still being fetched on a cold start. This is a no-op success, not a
+            // failure — the old code called prepareLinkController() (which prepares the
+            // Link UI token, NOT an account fetch) and then guessed a 1.5s delay, so it
+            // almost always reported failure here and failed the entire full sync.
+            completion?(true)
+            return
         }
+
+        firestoreManager.syncAccounts(plaidManager.accounts, completion: completion ?? { _ in })
     }
     
     /// Syncs transaction data to Firestore
@@ -246,18 +235,21 @@ class PlaidFirestoreSync: ObservableObject {
             let docRef = transactionsRef.document(transaction.id)
             
             // Convert transaction to dictionary manually
+            // Write the Plaid-provided category to `plaidCategory` only. The
+            // effective `category` field is reserved for user overrides, so a
+            // merge:true re-sync can never overwrite a manual re-categorization.
             let transactionData: [String: Any] = [
                 "id": transaction.id,
                 "accountId": transaction.accountId,
                 "name": transaction.name,
                 "amount": transaction.amount,
                 "date": transaction.date,
-                "category": transaction.category,
+                "plaidCategory": transaction.category,
                 "merchantName": transaction.merchantName,
                 "pending": transaction.pending,
                 "lastUpdated": FieldValue.serverTimestamp()
             ]
-            
+
             // Add a set operation to the batch
             batch.setData(transactionData, forDocument: docRef, merge: true)
         }
@@ -368,8 +360,8 @@ class PlaidFirestoreSync: ObservableObject {
     
     /// Determines if enough time has passed since the last sync
     private func shouldSync() -> Bool {
-        if let lastSyncTimeInterval = UserDefaults.standard.double(forKey: "lastPlaidSyncTime") as TimeInterval?,
-           lastSyncTimeInterval > 0 {
+        let lastSyncTimeInterval = UserDefaults.standard.double(forKey: "lastPlaidSyncTime")
+        if lastSyncTimeInterval > 0 {
             let lastSync = Date(timeIntervalSince1970: lastSyncTimeInterval)
             let timeSinceLastSync = Date().timeIntervalSince(lastSync)
             

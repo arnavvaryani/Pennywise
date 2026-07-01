@@ -292,7 +292,7 @@ struct SettingsView: View {
                         ) {
                             // Reset the biometric check to force authentication on next app launch
                             if requireBiometricsOnOpen {
-                                UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                                authService.clearBiometricCheck()
                             }
                         }
                     }
@@ -1039,10 +1039,10 @@ struct SettingsView: View {
                     
                     guard let dateTimestamp = data["date"] as? Timestamp,
                           let merchant = data["merchantName"] as? String,
-                          let category = data["category"] as? String,
                           let amount = data["amount"] as? Double else {
                         continue // Skip if missing required fields
                     }
+                    let category = effectiveTransactionCategory(data)
                     
                     let date = dateTimestamp.dateValue()
                     let pending = data["pending"] as? Bool ?? false
@@ -1291,7 +1291,7 @@ struct SettingsView: View {
     // Calculate spent amount for a specific category
     private func calculateSpentForCategory(_ category: BudgetCategory) -> Double {
         // Filter transactions for the current month and this category
-        let calendar = Calendar.current
+        let calendar = DateUtils.calendar
         let now = Date()
         let components = calendar.dateComponents([.year, .month], from: now)
         

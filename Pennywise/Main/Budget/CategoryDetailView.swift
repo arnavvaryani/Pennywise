@@ -456,7 +456,7 @@ struct CategoryDetailView: View {
     
     // Load transactions for this category
     private func loadCategoryTransactions() {
-        let calendar = Calendar.current
+        let calendar = DateUtils.calendar
         let now = Date()
         let currentMonth = calendar.component(.month, from: now)
         let currentYear = calendar.component(.year, from: now)

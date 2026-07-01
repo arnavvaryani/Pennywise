@@ -202,7 +202,7 @@ class CategoryMappingSystem {
         // Create budget categories based on spending
         for (category, spent) in spendingByCategory {
             // Calculate recommended budget based on past spending + buffer
-            let recommendedAmount = spent * 1.1 // 10% buffer
+            let recommendedAmount = (spent * 1.1).roundedToCents // 10% buffer
             
             // Create the budget category
             let icon = categoryIcons[category] ?? "questionmark.circle.fill"
@@ -221,7 +221,7 @@ class CategoryMappingSystem {
         // Ensure savings category exists
         if !budgetCategories.contains(where: { $0.name == "Savings" }) {
             // Calculate recommended savings (15% of income if none exists)
-            let recommendedSavings = monthlyIncome * 0.15
+            let recommendedSavings = (monthlyIncome * 0.15).roundedToCents
             
             let savingsCategory = BudgetCategory(
                 name: "Savings",

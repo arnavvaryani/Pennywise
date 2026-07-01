@@ -49,18 +49,18 @@ class AuthenticationServiceTests: XCTestCase {
         // Test when biometrics are enabled and required on open
         authService.biometricAuthEnabled = true
         authService.requireBiometricsOnOpen = true
-        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
-        
+        authService.clearBiometricCheck()
+
         XCTAssertTrue(authService.shouldRequireBiometricAuth(), "Should require biometric auth")
-        
+
         // Test when user already passed check
-        UserDefaults.standard.set(true, forKey: "hasPassedBiometricCheck")
+        authService.markBiometricCheckPassed()
         XCTAssertFalse(authService.shouldRequireBiometricAuth(), "Should not require biometric auth when already passed")
-        
+
         // Test when biometrics are disabled
         authService.biometricAuthEnabled = false
         authService.requireBiometricsOnOpen = true
-        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+        authService.clearBiometricCheck()
         XCTAssertFalse(authService.shouldRequireBiometricAuth(), "Should not require biometric auth when disabled")
     }
 }

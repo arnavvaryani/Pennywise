@@ -19,6 +19,22 @@ class AuthenticationService: ObservableObject {
     @Published var isAuthenticated = false
     @Published var authError: Error?
     @Published var isLoading = false
+
+    /// In-memory, per-session biometric gate. Deliberately NOT persisted: a cold
+    /// launch always starts `false`, and the value cannot be flipped to `true`
+    /// via UserDefaults/backup tampering, which the old persisted flag allowed.
+    @Published private(set) var hasPassedBiometricCheck = false
+
+    /// Mark the biometric gate as passed for the current session (set only after a
+    /// successful `LAContext` evaluation).
+    func markBiometricCheckPassed() {
+        hasPassedBiometricCheck = true
+    }
+
+    /// Clear the biometric gate, forcing a re-prompt. Safe to call from anywhere.
+    func clearBiometricCheck() {
+        hasPassedBiometricCheck = false
+    }
     
     @AppStorage("biometricAuthEnabled") var biometricAuthEnabled = false
     @AppStorage("requireBiometricsOnOpen") var requireBiometricsOnOpen = false
@@ -48,7 +64,7 @@ class AuthenticationService: ObservableObject {
                 self?.isAuthenticated = user != nil
                 
                 if user != nil && self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
-                    UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                    self?.clearBiometricCheck()
                 }
             }
         }
@@ -104,7 +120,7 @@ class AuthenticationService: ObservableObject {
                         self?.authError = error
                         completion(.failure(error))
                     } else {
-                        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                        self?.clearBiometricCheck()
                         completion(.success(()))
                     }
                 }
@@ -120,7 +136,7 @@ class AuthenticationService: ObservableObject {
             context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
                 DispatchQueue.main.async {
                     if success {
-                        UserDefaults.standard.set(true, forKey: "hasPassedBiometricCheck")
+                        self.markBiometricCheckPassed()
                         completion(true, nil)
                     } else {
                         let authError: Error
@@ -140,15 +156,14 @@ class AuthenticationService: ObservableObject {
     
     func shouldRequireBiometricAuth() -> Bool {
         if biometricAuthEnabled && requireBiometricsOnOpen {
-            let hasPassedCheck = UserDefaults.standard.bool(forKey: "hasPassedBiometricCheck")
-            return !hasPassedCheck
+            return !hasPassedBiometricCheck
         }
         return false
     }
     
     func resetBiometricCheck() {
         if requireBiometricsOnOpen && biometricAuthEnabled {
-            UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+            clearBiometricCheck()
         }
     }
         
@@ -179,7 +194,7 @@ class AuthenticationService: ObservableObject {
                     self?.isAuthenticated = true
                     
                     if self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
-                        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                        self?.clearBiometricCheck()
                     }
                     
                     completion(.success(user))
@@ -215,7 +230,7 @@ class AuthenticationService: ObservableObject {
                     
   
                     if self?.biometricAuthEnabled == true && self?.requireBiometricsOnOpen == true {
-                        UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                        self?.clearBiometricCheck()
                     }
                     
                     completion(.success(user))
@@ -286,7 +301,7 @@ class AuthenticationService: ObservableObject {
                         self?.createUserProfile(for: firebaseUser)
                         
                         if self?.requireBiometricsOnOpen == true && self?.biometricAuthEnabled == true {
-                            UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                            self?.clearBiometricCheck()
                         }
                         
                         completion(.success(firebaseUser))

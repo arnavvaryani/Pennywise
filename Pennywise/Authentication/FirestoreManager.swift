@@ -259,15 +259,16 @@ class FirestoreManager: ObservableObject {
             }
             
             let categories = documents.compactMap { document -> BudgetCategory? in
-                guard
-                    let name = document.data()["name"] as? String,
-                    let amount = document.data()["amount"] as? Double,
-                    let icon = document.data()["icon"] as? String,
-                    let colorHex = document.data()["color"] as? String
-                else {
+                // Only `name` is essential. Missing cosmetic fields (icon/color) or a
+                // missing amount fall back to sensible defaults instead of silently
+                // dropping the entire category.
+                guard let name = document.data()["name"] as? String else {
                     return nil
                 }
-                
+                let amount = document.data()["amount"] as? Double ?? 0
+                let icon = document.data()["icon"] as? String ?? "dollarsign.circle.fill"
+                let colorHex = document.data()["color"] as? String ?? "#4CAF50"
+
                 let color = Color(hex: colorHex)
                 return BudgetCategory(
                     name: name,
@@ -414,12 +415,9 @@ class FirestoreManager: ObservableObject {
         loadBudgetCategories { [weak self] categories in
             guard let self = self else { return }
             
-            // Load transactions for current month
-            let calendar = Calendar.current
-            let components = calendar.dateComponents([.year, .month], from: Date())
-            let startOfMonth = calendar.date(from: components)!
-            let nextMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth)!
-            let startOfNextMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: nextMonth))!
+            // Load transactions for current month (UTC bucketing for consistency).
+            let startOfMonth = DateUtils.startOfMonth(for: Date())
+            let startOfNextMonth = DateUtils.startOfNextMonth(for: Date())
             
             // Query transactions for the current month
             self.db.collection("users/\(userId)/transactions")
@@ -443,8 +441,8 @@ class FirestoreManager: ObservableObject {
                     var totalSpent: Double = 0
                     
                     for document in documents {
-                        if let category = document.data()["category"] as? String,
-                           let amount = document.data()["amount"] as? Double {
+                        if let amount = document.data()["amount"] as? Double {
+                            let category = effectiveTransactionCategory(document.data())
                             categorySpending[category, default: 0] += amount
                             totalSpent += amount
                         }
@@ -494,10 +492,10 @@ class FirestoreManager: ObservableObject {
             return
         }
         
-        // Group transactions by month
-        let calendar = Calendar.current
+        // Group transactions by month (UTC bucketing for consistency).
+        let calendar = DateUtils.calendar
         var transactionsByMonth: [String: [PlaidTransaction]] = [:]
-        
+
         for transaction in transactions {
             let components = calendar.dateComponents([.year, .month], from: transaction.date)
             guard let year = components.year, let month = components.month else { continue }
@@ -537,18 +535,20 @@ class FirestoreManager: ObservableObject {
                 return ["category": category, "amount": amount]
             }.sorted { (a, b) -> Bool in
                 // Sort by amount in descending order
-                return (a["amount"] as! Double) > (b["amount"] as! Double)
+                return (a["amount"] as? Double ?? 0) > (b["amount"] as? Double ?? 0)
             }.prefix(5).map { category -> [String: Any] in
                 // Convert to a format Firestore definitely supports
                 return [
-                    "category": category["category"] as! String,
-                    "amount": category["amount"] as! Double
+                    "category": category["category"] as? String ?? "",
+                    "amount": category["amount"] as? Double ?? 0
                 ]
             }
             
-            // Get previous month data to calculate change
+            // Get previous month data to calculate change (UTC to match `calendar`).
             let dateFormatter = DateFormatter()
             dateFormatter.dateFormat = "yyyy-MM"
+            dateFormatter.timeZone = DateUtils.bucketingTimeZone
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
             guard let date = dateFormatter.date(from: yearMonth) else {
                 group.leave()
                 continue
@@ -603,9 +603,12 @@ class FirestoreManager: ObservableObject {
                         overallSuccess = false
                     }
                     
-                    // If this is the current month, also generate savings tips
+                    // If this is the current month, also generate savings tips.
+                    // Must use UTC to match the UTC-built `yearMonth` keys above.
                     let currentDateFormatter = DateFormatter()
                     currentDateFormatter.dateFormat = "yyyy-MM"
+                    currentDateFormatter.timeZone = DateUtils.bucketingTimeZone
+                    currentDateFormatter.locale = Locale(identifier: "en_US_POSIX")
                     let currentYearMonth = currentDateFormatter.string(from: Date())
                     
                     if yearMonth == currentYearMonth {

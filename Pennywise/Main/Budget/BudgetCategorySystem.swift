@@ -222,10 +222,10 @@ class BudgetCategorySystem {
                 }
             }
             
-            // Create budget category with recommended amount
+            // Create budget category with recommended amount (cent-accurate)
             let budgetCategory = convertToBudgetCategory(
                 predefined: predefined,
-                amount: recommendedAmount
+                amount: recommendedAmount.roundedToCents
             )
             
             budgetCategories.append(budgetCategory)

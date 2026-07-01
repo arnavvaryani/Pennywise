@@ -152,7 +152,7 @@ struct AppCoordinator: View {
         .onAppear {
             // Always reset the biometric check when the app appears
             if authService.isAuthenticated && authService.biometricAuthEnabled && authService.requireBiometricsOnOpen {
-                UserDefaults.standard.set(false, forKey: "hasPassedBiometricCheck")
+                authService.clearBiometricCheck()
             }
             
             checkBiometricAuthRequirement()
@@ -197,14 +197,14 @@ struct AppCoordinator: View {
     
     private func checkBiometricAuthRequirement() {
         if authService.isAuthenticated && authService.requireBiometricsOnOpen && authService.biometricAuthEnabled {
-            let hasPassedBiometricCheck = UserDefaults.standard.bool(forKey: "hasPassedBiometricCheck")
-            
-            if !hasPassedBiometricCheck {
+            if !authService.hasPassedBiometricCheck {
                 let biometricType = authService.getBiometricType()
                 if biometricType != .none {
                     showBiometricAuth = true
                 } else {
-                    UserDefaults.standard.set(true, forKey: "hasPassedBiometricCheck")
+                    // No biometric hardware available: nothing to prompt, so allow
+                    // through for this session only (in-memory, resets on relaunch).
+                    authService.markBiometricCheckPassed()
                 }
             }
         }
