@@ -60,7 +60,7 @@ struct BudgetPlannerView: View {
     }
     
     var totalSpentThisMonth: Double {
-        let calendar = Calendar.current
+        let calendar = DateUtils.calendar
         let now = Date()
         let currentMonth = calendar.component(.month, from: now)
         let currentYear = calendar.component(.year, from: now)
@@ -504,7 +504,7 @@ struct BudgetPlannerView: View {
                                     
                                     Spacer()
                                     
-                                    Text("\(Int(category.amount / totalBudget * 100))%")
+                                    Text("\(totalBudget > 0 ? Int(category.amount / totalBudget * 100) : 0)%")
                                         .font(.caption)
                                         .foregroundColor(AppTheme.textColor.opacity(0.7))
                                 }
@@ -734,7 +734,7 @@ struct BudgetPlannerView: View {
     }
     
     private func calculateMonthlyIncomeFromTransactions() {
-        let calendar = Calendar.current
+        let calendar = DateUtils.calendar
         let now = Date()
         let currentMonth = calendar.component(.month, from: now)
         let currentYear = calendar.component(.year, from: now)
@@ -831,7 +831,7 @@ struct BudgetPlannerView: View {
     
     // Calculate spending for each category - FIXED to match categories correctly
     private func calculateCategorySpending() {
-        let calendar = Calendar.current
+        let calendar = DateUtils.calendar
         let now = Date()
         let currentMonth = calendar.component(.month, from: now)
         let currentYear = calendar.component(.year, from: now)
@@ -1578,7 +1578,7 @@ struct BudgetPlannerView: View {
             // Process each default category
             for (categoryName, icon, color, percentage, isEssential) in defaultCategories {
                 let categoryNameLowercased = categoryName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                let budgetAmount = monthlyIncome * percentage
+                let budgetAmount = (monthlyIncome * percentage).roundedToCents
                 
                 // Check if this category already exists (by normalized name)
                 if let (existingCategory, docId) = existingCategoriesByName[categoryNameLowercased] {
@@ -1693,6 +1693,7 @@ struct BudgetPlannerView: View {
     // Calculate start angle for pie slice
     private func calculateStartAngle(for index: Int) -> Angle {
         let precedingTotal = categories.prefix(index).reduce(0) { $0 + $1.amount }
+        guard totalBudget > 0 else { return .degrees(-90) }
         return .degrees(precedingTotal / totalBudget * 360 - 90)
     }
     
@@ -1700,6 +1701,7 @@ struct BudgetPlannerView: View {
     private func calculateEndAngle(for index: Int) -> Angle {
         let precedingTotal = categories.prefix(index).reduce(0) { $0 + $1.amount }
         let categoryAmount = categories[index].amount
+        guard totalBudget > 0 else { return .degrees(-90) }
         return .degrees((precedingTotal + categoryAmount) / totalBudget * 360 - 90)
     }
 }

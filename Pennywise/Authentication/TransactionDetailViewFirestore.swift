@@ -109,8 +109,9 @@ struct TransactionDetailViewFirestore: View {
                     self.transactionNotes = notes
                 }
                 
-                if let category = document.data()?["category"] as? String {
-                    self.selectedCategory = category
+                let data = document.data()
+                if data?["category"] != nil || data?["plaidCategory"] != nil {
+                    self.selectedCategory = effectiveTransactionCategory(data)
                 } else {
                     self.selectedCategory = self.transaction.category
                 }
@@ -192,13 +193,13 @@ struct TransactionDetailViewFirestore: View {
                 let name = document.data()["name"] as? String,
                 let amount = document.data()["amount"] as? Double,
                 let dateTimestamp = document.data()["date"] as? Timestamp,
-                let category = document.data()["category"] as? String,
                 let merchantName = document.data()["merchantName"] as? String,
                 let accountId = document.data()["accountId"] as? String,
                 let pending = document.data()["pending"] as? Bool
             else {
                 return nil
             }
+            let category = effectiveTransactionCategory(document.data())
             
             return PlaidTransaction(
                 id: document.documentID,

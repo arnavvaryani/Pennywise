@@ -34,7 +34,7 @@ struct InsightsView: View {
     }
     
     private var transactionsInTimeframe: [PlaidTransaction] {
-        let calendar = Calendar.current
+        let calendar = DateUtils.calendar
         let now = Date()
         
         let startDate: Date
@@ -144,10 +144,14 @@ struct InsightsView: View {
     
     // Monthly income trend data
     private var monthlyIncomeTrend: [(String, Double)] {
-        let calendar = Calendar.current
+        // Formatter is used for BUCKETING here (not just display), so it must use
+        // the UTC bucketing timezone/locale to match the UTC-parsed transaction dates.
+        let calendar = DateUtils.calendar
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "MMM"
-        
+        dateFormatter.timeZone = DateUtils.bucketingTimeZone
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+
         var monthlyData: [String: Double] = [:]
         
         // Get last 6 months
@@ -470,7 +474,7 @@ struct InsightsView: View {
                                         .font(.caption)
                                         .foregroundColor(AppTheme.textColor)
                                     
-                                    Text("(\(Int(amount / totalSpending * 100))%)")
+                                    Text("(\((totalSpending > 0 ? Int(amount / totalSpending * 100) : 0))%)")
                                         .font(.caption)
                                         .foregroundColor(AppTheme.textColor.opacity(0.6))
                                 }
@@ -723,7 +727,7 @@ struct InsightsView: View {
                                 .font(.headline)
                                 .foregroundColor(AppTheme.textColor)
                             
-                            Text("\(Int(amount / totalSpending * 100))%")
+                            Text("\((totalSpending > 0 ? Int(amount / totalSpending * 100) : 0))%")
                                 .font(.caption)
                                 .foregroundColor(AppTheme.textColor.opacity(0.6))
                         }
@@ -800,7 +804,7 @@ struct InsightsView: View {
                                     .font(.headline)
                                     .foregroundColor(AppTheme.primaryGreen)
                                 
-                                Text("\(Int(amount / totalIncome * 100))%")
+                                Text("\((totalIncome > 0 ? Int(amount / totalIncome * 100) : 0))%")
                                     .font(.caption)
                                     .foregroundColor(AppTheme.textColor.opacity(0.6))
                             }
@@ -890,7 +894,7 @@ struct InsightsView: View {
                                 .font(.headline)
                                 .foregroundColor(AppTheme.textColor)
                             
-                            Text("\(Int(amount / totalSpending * 100))%")
+                            Text("\((totalSpending > 0 ? Int(amount / totalSpending * 100) : 0))%")
                                 .font(.caption)
                                 .foregroundColor(AppTheme.textColor.opacity(0.6))
                         }
@@ -1004,7 +1008,7 @@ struct InsightsView: View {
                                         .font(.caption)
                                         .foregroundColor(AppTheme.textColor)
                                     
-                                    Text("(\(Int(amount / totalSpending * 100))%)")
+                                    Text("(\((totalSpending > 0 ? Int(amount / totalSpending * 100) : 0))%)")
                                         .font(.caption)
                                         .foregroundColor(AppTheme.textColor.opacity(0.6))
                                 }
@@ -1234,7 +1238,7 @@ struct InsightsView: View {
                                             .font(.headline)
                                             .foregroundColor(AppTheme.textColor)
                                         
-                                        Text("\(Int(amount / totalIncome * 100))%")
+                                        Text("\((totalIncome > 0 ? Int(amount / totalIncome * 100) : 0))%")
                                             .font(.caption)
                                             .foregroundColor(AppTheme.textColor.opacity(0.6))
                                     }
@@ -1465,7 +1469,7 @@ struct InsightsView: View {
                                 .font(.subheadline)
                                 .foregroundColor(AppTheme.textColor.opacity(0.7))
                             
-                            Text("\(Int(totalAmount / totalIncome * 100))%")
+                            Text("\((totalIncome > 0 ? Int(totalAmount / totalIncome * 100) : 0))%")
                                 .font(.title3)
                                 .fontWeight(.bold)
                                 .foregroundColor(AppTheme.accentBlue)
@@ -1599,7 +1603,7 @@ struct InsightsView: View {
                                 .font(.subheadline)
                                 .foregroundColor(AppTheme.textColor.opacity(0.7))
                             
-                            Text("\(Int(totalAmount / totalCompare * 100))%")
+                            Text("\((totalCompare > 0 ? Int(totalAmount / totalCompare * 100) : 0))%")
                                 .font(.title3)
                                 .fontWeight(.bold)
                                 .foregroundColor(AppTheme.accentBlue)

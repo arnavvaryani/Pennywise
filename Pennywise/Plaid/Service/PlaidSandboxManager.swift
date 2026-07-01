@@ -11,10 +11,28 @@ import LinkKit
 /// PlaidSandboxManager: Direct integration with Plaid's API for sandbox testing
 class PlaidSandboxManager {
     static let shared = PlaidSandboxManager()
-      
-    private let clientID = "67f84b31568ea000229ae4f9"
-    private let secret = "86d4efe0c669d351a5d54a86815d9b"
+
+    // Credentials are loaded at runtime from `Secrets.plist` (git-ignored) so they
+    // are never committed to source control. Provide your own by copying
+    // `Secrets.example.plist` to `Secrets.plist` and filling in the values.
+    //
+    // NOTE: shipping a Plaid `secret` in any mobile client is unsafe by design —
+    // Plaid requires the secret to live on a backend that the app calls. This
+    // externalization stops the secret leaking into git, but the long-term fix is
+    // to move link-token creation and public-token exchange behind your own API.
+    private let clientID = PlaidSandboxManager.secretsValue(forKey: "PlaidClientID")
+    private let secret = PlaidSandboxManager.secretsValue(forKey: "PlaidSecret")
     private let plaidAPIBaseURL = "https://sandbox.plaid.com"
+
+    private static func secretsValue(forKey key: String) -> String {
+        guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+              let dict = NSDictionary(contentsOf: url),
+              let value = dict[key] as? String,
+              !value.isEmpty else {
+            return "placeholder"
+        }
+        return value
+    }
       
       // MARK: - Public Methods
 
@@ -143,10 +161,7 @@ class PlaidSandboxManager {
               return
           }
           
-          let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-              // Avoid retain cycles with weak self
-              guard let self = self else { return }
-              
+          let task = URLSession.shared.dataTask(with: request) { data, response, error in
               // IMPROVED ERROR HANDLING: Check HTTP status code
               if let httpResponse = response as? HTTPURLResponse,
                  !(200...299).contains(httpResponse.statusCode) {
@@ -160,14 +175,14 @@ class PlaidSandboxManager {
                   }
                   return
               }
-              
+
               if let error = error {
                   DispatchQueue.main.async {
                       completion(.failure(error))
                   }
                   return
               }
-              
+
               guard let data = data else {
                   let error = NSError(domain: "PlaidSandboxManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "No data received"])
                   DispatchQueue.main.async {
@@ -175,13 +190,13 @@ class PlaidSandboxManager {
                   }
                   return
               }
-              
+
               do {
                   let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                   if let accessToken = json?["access_token"] as? String {
-                      // SECURITY ENHANCEMENT: Store the access token securely
-                      self.storeAccessTokenSecurely(accessToken)
-                      
+                      // Persistence is handled by PlaidManager, which writes the token to
+                      // the iOS Keychain. Do NOT store it here (UserDefaults is plaintext
+                      // and recoverable from device backups).
                       DispatchQueue.main.async {
                           completion(.success(accessToken))
                       }
@@ -207,14 +222,7 @@ class PlaidSandboxManager {
       }
       
       // MARK: - Helper Methods
-      
-      // SECURITY ENHANCEMENT: Secure storage of access token
-      private func storeAccessTokenSecurely(_ token: String) {
-          // In a real app, this would use Keychain Services
-          // For now, just store in UserDefaults for sandbox testing
-          UserDefaults.standard.set(token, forKey: "plaid_access_token")
-      }
-    
+
     /// Retrieve accounts associated with an access token
     func getAccounts(accessToken: String, completion: @escaping (Result<[PlaidAccount], Error>) -> Void) {
         let url = URL(string: "\(plaidAPIBaseURL)/accounts/get")!
@@ -308,20 +316,18 @@ class PlaidSandboxManager {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // Get date range (last 30 days)
-        let calendar = Calendar.current
+        // Get date range (last 30 days). Use the UTC bucketing calendar so the
+        // request window is deterministic regardless of device timezone.
+        let calendar = DateUtils.calendar
         let endDate = Date()
         let startDate = calendar.date(byAdding: .day, value: -30, to: endDate) ?? endDate
-        
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        
+
         let payload: [String: Any] = [
             "client_id": clientID,
             "secret": secret,
             "access_token": accessToken,
-            "start_date": dateFormatter.string(from: startDate),
-            "end_date": dateFormatter.string(from: endDate)
+            "start_date": DateUtils.plaidDateString(from: startDate),
+            "end_date": DateUtils.plaidDateString(from: endDate)
         ]
         
         do {
@@ -360,9 +366,9 @@ class PlaidSandboxManager {
                             return nil
                         }
                         
-                        // Parse date
-                        dateFormatter.dateFormat = "yyyy-MM-dd"
-                        guard let date = dateFormatter.date(from: dateStr) else {
+                        // Parse date to a deterministic UTC-midnight instant so the
+                        // transaction always buckets into the same month everywhere.
+                        guard let date = DateUtils.parsePlaidDate(dateStr) else {
                             return nil
                         }
                         

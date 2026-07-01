@@ -202,7 +202,7 @@ class PlaidManager: ObservableObject {
     }
 
     func getMonthlyFinancialData() -> [MonthlyFinancialData] {
-        let cal = Calendar.current
+        let cal = DateUtils.calendar
         let now = Date()
         var data: [MonthlyFinancialData] = []
         for offset in 0..<6 {
@@ -245,7 +245,7 @@ class PlaidManager: ObservableObject {
             
             let category = BudgetCategory(
                 name: categoryName,
-                amount: amount * 1.1, // Set budget slightly higher than current spending
+                amount: (amount * 1.1).roundedToCents, // Set budget slightly higher than current spending
                 icon: icon,
                 color: color
             )
@@ -267,14 +267,10 @@ class PlaidManager: ObservableObject {
     }
 
     private func calculateTotalIncome() -> Double {
-        // Get income transactions for current month
-        let calendar = Calendar.current
-        let now = Date()
-        let components = calendar.dateComponents([.year, .month], from: now)
-        let startOfMonth = calendar.date(from: components)!
-        let nextMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth)!
-        let startOfNextMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: nextMonth))!
-        
+        // Get income transactions for current month (UTC bucketing for consistency).
+        let startOfMonth = DateUtils.startOfMonth(for: Date())
+        let startOfNextMonth = DateUtils.startOfNextMonth(for: Date())
+
         // Sum income transactions (negative amounts)
         let income = transactions
             .filter { $0.date >= startOfMonth && $0.date < startOfNextMonth && $0.amount < 0 }
@@ -292,7 +288,8 @@ class PlaidManager: ObservableObject {
                 self.isLoading = false
                 switch result {
                 case .success(let token):
-                    UserDefaults.standard.set(token, forKey: "plaid_link_token")
+                    // Link tokens are short-lived, single-use secrets — keep them in
+                    // memory only; never persist to UserDefaults (plaintext).
                     let config = self.buildLinkConfig(token: token)
                     switch Plaid.create(config) {
                     case .success(let handler):
@@ -515,14 +512,14 @@ class PlaidManager: ObservableObject {
                         let name = document.data()["name"] as? String,
                         let amount = document.data()["amount"] as? Double,
                         let dateTimestamp = document.data()["date"] as? Timestamp,
-                        let category = document.data()["category"] as? String,
                         let merchantName = document.data()["merchantName"] as? String,
                         let accountId = document.data()["accountId"] as? String,
                         let pending = document.data()["pending"] as? Bool
                     else {
                         return nil
                     }
-                    
+                    let category = effectiveTransactionCategory(document.data())
+
                     return PlaidTransaction(
                         id: document.documentID,
                         name: name,
