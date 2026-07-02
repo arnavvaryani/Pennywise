@@ -6,24 +6,22 @@
 //
 
 import SwiftUI
-import FirebaseAuth
 
 struct FinanceLoginView: View {
-    @State private var email = ""
-    @State private var password = ""
-    @State private var isLoginMode = true
-    @State private var showingAlert = false
-    @State private var alertMessage = ""
-    @State private var animationAmount: CGFloat = 1.0
+    @Bindable var viewModel: LoginViewModel
     
-    @StateObject private var authService = AuthenticationService.shared
-    @State private var firebaseUIController = FirebaseUIViewRepresentable { _ in }
+    @State private var showingAlert = false
+    @State private var animationAmount: CGFloat = 1.0
+    @FocusState private var focusedField: FocusField?
+    
+    private enum FocusField {
+        case email
+        case password
+    }
     
     var body: some View {
         ZStack {
-            // Background gradient - using the same gradient as the rest of the app
-            AppTheme.backgroundGradient
-                .edgesIgnoringSafeArea(.all)
+            AppTheme.enhancedBackgroundGradient
             
             // Content
             ScrollView {
@@ -55,9 +53,16 @@ struct FinanceLoginView: View {
         .alert(isPresented: $showingAlert) {
             Alert(
                 title: Text("Notice"),
-                message: Text(alertMessage),
-                dismissButton: .default(Text("OK"))
+                message: Text(viewModel.errorMessage),
+                dismissButton: .default(Text("OK")) {
+                    viewModel.errorMessage = ""
+                }
             )
+        }
+        .onChange(of: viewModel.errorMessage) { newValue in
+            if !newValue.isEmpty {
+                showingAlert = true
+            }
         }
         .onAppear {
             // Start animation
@@ -91,104 +96,97 @@ struct FinanceLoginView: View {
     }
     
     private var segmentedPicker: some View {
-        Picker("Mode", selection: $isLoginMode) {
-            Text("Login").tag(true)
-            Text("Sign Up").tag(false)
+        PWGlassCard {
+            Picker("Mode", selection: $viewModel.isLoginMode) {
+                Text("Login").tag(true)
+                Text("Sign Up").tag(false)
+            }
+            .pickerStyle(.segmented)
         }
-        .pickerStyle(SegmentedPickerStyle())
         .padding(.horizontal, 24)
-        .onAppear {
-            UISegmentedControl.appearance().selectedSegmentTintColor = UIColor(AppTheme.primaryGreen)
-            UISegmentedControl.appearance().setTitleTextAttributes(
-                [.foregroundColor: UIColor.white],
-                for: .selected
-            )
-            UISegmentedControl.appearance().setTitleTextAttributes(
-                [.foregroundColor: UIColor(AppTheme.textColor.opacity(0.7))],
-                for: .normal
-            )
-        }
     }
     
     private var inputFieldsSection: some View {
-        VStack(spacing: 20) {
-            // Email field
-            HStack {
-                Image(systemName: "envelope.fill")
-                    .foregroundColor(AppTheme.primaryGreen)
-                    .frame(width: 24)
-                
-                TextField("", text: $email)
-                    .placeholder(when: email.isEmpty) {
-                        Text("Email").foregroundColor(AppTheme.textColor.opacity(0.7))
+        VStack(spacing: 12) {
+            PWGlassCard {
+                VStack(spacing: 12) {
+                    PWTextFieldRow(
+                        placeholder: "Email",
+                        text: $viewModel.email,
+                        icon: "envelope.fill",
+                        keyboardType: .emailAddress,
+                        textContentType: .username
+                    )
+                    .focused($focusedField, equals: .email)
+                    .submitLabel(.next)
+                    .onSubmit { focusedField = .password }
+                    
+                    PWSecureFieldRow(
+                        placeholder: "Password",
+                        text: $viewModel.password,
+                        icon: "lock.fill",
+                        textContentType: viewModel.isLoginMode ? .password : .newPassword
+                    )
+                    .focused($focusedField, equals: .password)
+                    .submitLabel(.go)
+                    .onSubmit {
+                        Task {
+                            if viewModel.isLoginMode {
+                                await viewModel.signIn()
+                            } else {
+                                await viewModel.signUp()
+                            }
+                        }
                     }
-                    .foregroundColor(AppTheme.textColor)
-                    .keyboardType(.emailAddress)
-                    .disableAutocorrection(true)
-                    .autocapitalization(.none)
-            }
-            .padding()
-            .background(AppTheme.cardBackground)
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(AppTheme.cardStroke, lineWidth: 1)
-            )
-            
-            // Password field
-            HStack {
-                Image(systemName: "lock.fill")
-                    .foregroundColor(AppTheme.primaryGreen)
-                    .frame(width: 24)
-                
-                SecureField("", text: $password)
-                    .placeholder(when: password.isEmpty) {
-                        Text("Password").foregroundColor(AppTheme.textColor.opacity(0.7))
+                    
+                    if !viewModel.isLoginMode {
+                        Text("At least 8 characters with uppercase, lowercase, and a number")
+                            .font(.caption2)
+                            .foregroundColor(AppTheme.textColor.opacity(0.6))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 2)
                     }
-                    .foregroundColor(AppTheme.textColor)
-            }
-            .padding()
-            .background(AppTheme.cardBackground)
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(AppTheme.cardStroke, lineWidth: 1)
-            )
-            
-            // Error message
-            if let error = authService.authError {
-                AuthErrorView(error: error)
+                    
+                    if viewModel.isLoginMode {
+                        Button("Forgot password?") {
+                            Task { await viewModel.sendPasswordReset() }
+                        }
+                        .font(.caption)
+                        .foregroundColor(AppTheme.primaryGreen)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.top, 2)
+                    }
+                }
             }
             
+            if !viewModel.errorMessage.isEmpty {
+                Text(viewModel.errorMessage)
+                    .font(.caption)
+                    .foregroundColor(AppTheme.expenseColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+            }
         }
         .padding(.horizontal, 16)
     }
     
     private var loginButton: some View {
-        Button(action: handleEmailAuth) {
-            HStack {
-                if authService.isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(1.0, anchor: .center)
-                        .padding(.trailing, 5)
+        PWPrimaryButton(
+            title: viewModel.isLoginMode ? "Login" : "Create Account",
+            isLoading: viewModel.isLoading,
+            isDisabled: viewModel.email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                viewModel.password.isEmpty
+        ) {
+            Task {
+                if viewModel.isLoginMode {
+                    await viewModel.signIn()
+                } else {
+                    await viewModel.signUp()
                 }
-                
-                Text(isLoginMode ? "Login" : "Create Account")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
             }
-            .background(AppTheme.primaryGreen)
-            .cornerRadius(12)
-            .shadow(color: AppTheme.primaryGreen.opacity(0.3), radius: 5, x: 0, y: 5)
         }
         .padding(.horizontal, 24)
-        .padding(.top, 10)
-        .disabled(authService.isLoading)
-        .opacity(authService.isLoading ? 0.7 : 1.0)
-        .buttonStyle(ScaleButtonStyle())
+        .padding(.top, 8)
     }
     
     private var socialLoginSection: some View {
@@ -197,25 +195,25 @@ struct FinanceLoginView: View {
                 .font(.footnote)
                 .foregroundColor(AppTheme.textColor.opacity(0.7))
             
-            Button(action: handleGoogleSignIn) {
-                HStack {
-                    Image("google_logo") // You'll need to add this to your assets
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 20, height: 20)
-                    
-                    Text("Sign in with Google")
-                        .font(.headline)
-                        .foregroundColor(AppTheme.textColor)
+            Button(action: {
+                Task {
+                    _ = await viewModel.signInWithGoogle()
                 }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(AppTheme.cardBackground)
-                .cornerRadius(12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(AppTheme.cardStroke, lineWidth: 1)
-                )
+            }) {
+                PWGlassCard {
+                    HStack(spacing: 12) {
+                        Image("google_logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                        
+                        Text("Sign in with Google")
+                            .font(.headline)
+                            .foregroundColor(AppTheme.textColor)
+                        
+                        Spacer()
+                    }
+                }
             }
             .buttonStyle(ScaleButtonStyle())
             .padding(.horizontal, 24)
@@ -243,64 +241,12 @@ struct FinanceLoginView: View {
     
     // MARK: - Authentication Methods
     
-    private func handleEmailAuth() {
-        if isLoginMode {
-            // Login
-            authService.signInWithEmail(email: email, password: password) { result in
-                switch result {
-                case .success:
-                    // Login successful, navigation will be handled by app state
-                    break
-                case .failure:
-                    // Error already handled and displayed in AuthErrorView
-                    break
-                }
-            }
-        } else {
-            // Sign up
-            authService.signUpWithEmail(email: email, password: password) { result in
-                switch result {
-                case .success:
-                    // Sign up successful, navigation will be handled by app state
-                    break
-                case .failure:
-                    // Error already handled and displayed in AuthErrorView
-                    break
-                }
-            }
-        }
-    }
-    
-    private func handleGoogleSignIn() {
-        let completion: (Result<FirebaseAuth.User, Error>) -> Void = { result in
-            switch result {
-            case .success:
-                // Google Sign In successful, navigation will be handled by app state
-                break
-            case .failure(let error):
-                authService.authError = error
-                break
-            }
-        }
-        
-        firebaseUIController = FirebaseUIViewRepresentable(signInCompletion: completion)
-        firebaseUIController.signInWithGoogle()
-    }
-    
     private func forgotPassword() {
-        if email.isEmpty {
-            alertMessage = "Please enter your email address first"
-            showingAlert = true
-            return
-        }
-        
-        Auth.auth().sendPasswordReset(withEmail: email) { error in
-            if let error = error {
-                alertMessage = "Error: \(error.localizedDescription)"
-            } else {
-                alertMessage = "Password reset email sent. Please check your inbox."
+        Task {
+            await viewModel.sendPasswordReset()
+            if !viewModel.errorMessage.isEmpty {
+                showingAlert = true
             }
-            showingAlert = true
         }
     }
 }

@@ -7,8 +7,9 @@
 
 import XCTest
 
+@MainActor
 class PennywiseUITests: XCTestCase {
-    
+
     let app = XCUIApplication()
     
     override func setUpWithError() throws {
@@ -398,8 +399,9 @@ class PennywiseUITests: XCTestCase {
     }
 }
 
+@MainActor
 class PennywiseAccessibilityUITests: XCTestCase {
-    
+
     let app = XCUIApplication()
     
     override func setUpWithError() throws {

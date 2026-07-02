@@ -13,9 +13,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         FirebaseApp.configure()
         
-        UIApplication.shared.windows.forEach { window in
-            window.overrideUserInterfaceStyle = .dark
-        }
+        // Windows access is handled per-window-scene in modern iOS
+        // Use windowScene.windows instead of UIApplication.shared.windows
         
         return true
     }

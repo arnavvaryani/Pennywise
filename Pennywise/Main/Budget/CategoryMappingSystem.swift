@@ -10,10 +10,39 @@ import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
-// MARK: - CategoryMappingSystem
 /// Manages the mapping between Plaid transaction categories and user-defined budget categories
+@MainActor
 class CategoryMappingSystem {
     static let shared = CategoryMappingSystem()
+    
+    // Essential categories that are typically necessary expenses
+    static let essentialCategories = [
+        "Groceries", "Rent", "Utilities", "Healthcare", 
+        "Insurance", "Transportation", "Mortgage", "Bills"
+    ]
+    
+    // Default predefined categories for users to choose from
+    static let defaultCategories: [PredefinedCategory] = [
+        // Needs (Essential)
+        PredefinedCategory(name: "Housing", icon: "house.fill", color: Color(hex: "#4CAF50"), isEssential: true),
+        PredefinedCategory(name: "Groceries", icon: "cart.fill", color: Color(hex: "#2196F3"), isEssential: true),
+        PredefinedCategory(name: "Utilities", icon: "bolt.fill", color: Color(hex: "#9370DB"), isEssential: true),
+        PredefinedCategory(name: "Transportation", icon: "car.fill", color: Color(hex: "#BA55D3"), isEssential: true),
+        PredefinedCategory(name: "Healthcare", icon: "heart.fill", color: Color(hex: "#FF5757"), isEssential: true),
+        PredefinedCategory(name: "Insurance", icon: "shield.fill", color: Color(hex: "#20B2AA"), isEssential: true),
+        
+        // Wants (Non-essential)
+        PredefinedCategory(name: "Dining Out", icon: "fork.knife", color: Color(hex: "#FF8C00"), isEssential: false),
+        PredefinedCategory(name: "Entertainment", icon: "play.tv", color: Color(hex: "#FFD700"), isEssential: false),
+        PredefinedCategory(name: "Shopping", icon: "bag.fill", color: Color(hex: "#FF69B4"), isEssential: false),
+        PredefinedCategory(name: "Subscriptions", icon: "repeat", color: Color(hex: "#BA55D3"), isEssential: false),
+        PredefinedCategory(name: "Personal Care", icon: "person.fill", color: Color(hex: "#FF7F50"), isEssential: false),
+        PredefinedCategory(name: "Travel", icon: "airplane", color: Color(hex: "#87CEEB"), isEssential: false),
+        
+        // Savings & Debt
+        PredefinedCategory(name: "Savings", icon: "banknote.fill", color: Color(hex: "#4CAF50"), isEssential: false),
+        PredefinedCategory(name: "Debt Repayment", icon: "creditcard.fill", color: Color(hex: "#20B2AA"), isEssential: false)
+    ]
     
     // Dictionary mapping Plaid categories to user budget categories
     private var categoryMappings: [String: String] = [:]
@@ -136,6 +165,31 @@ class CategoryMappingSystem {
         return Array(Set(categoryMappings.values)).sorted()
     }
     
+    /// Get Plaid categories mapped to a specific budget category
+    func getMappings(for budgetCategory: String) -> [String] {
+        return categoryMappings.filter { $1 == budgetCategory }.map { $0.key }
+    }
+    
+    /// Update mappings for a budget category
+    func updateMappings(for budgetCategory: String, plaidCategories: [String]) {
+        // Remove old mappings for this budget category
+        let categoriesToRemove = categoryMappings.filter { $1 == budgetCategory }.map { $0.key }
+        for category in categoriesToRemove {
+            categoryMappings.removeValue(forKey: category)
+        }
+        
+        // Add new mappings
+        for category in plaidCategories {
+            categoryMappings[category] = budgetCategory
+            saveCustomMapping(plaidCategory: category, budgetCategory: budgetCategory)
+        }
+    }
+    
+    /// Get all potential Plaid categories (currently just all keys in mappings + some defaults)
+    func getAllPotentialPlaidCategories() -> [String] {
+        return Array(categoryMappings.keys).sorted()
+    }
+    
     /// Calculate spending by budget category from Plaid transactions
     func calculateSpendingByBudgetCategory(transactions: [PlaidTransaction]) -> [String: Double] {
         var spending: [String: Double] = [:]
@@ -157,9 +211,6 @@ class CategoryMappingSystem {
                                   monthlyIncome: Double) -> [BudgetCategory] {
         // Calculate total spending by budget category
         let spendingByCategory = calculateSpendingByBudgetCategory(transactions: transactions)
-        
-        // Calculate total spent
-        let totalSpent = spendingByCategory.values.reduce(0, +)
         
         // Create budget categories with recommended amounts
         var budgetCategories: [BudgetCategory] = []
@@ -209,10 +260,12 @@ class CategoryMappingSystem {
             let color = categoryColors[category] ?? Color.gray
             
             let budgetCategory = BudgetCategory(
+                id: UUID().uuidString,
                 name: category,
                 amount: recommendedAmount,
                 icon: icon,
-                color: color
+                colorHex: color.hexString,
+                isEssential: CategoryMappingSystem.essentialCategories.contains(category)
             )
             
             budgetCategories.append(budgetCategory)
@@ -224,10 +277,12 @@ class CategoryMappingSystem {
             let recommendedSavings = monthlyIncome * 0.15
             
             let savingsCategory = BudgetCategory(
+                id: UUID().uuidString,
                 name: "Savings",
                 amount: recommendedSavings,
                 icon: "banknote.fill",
-                color: AppTheme.primaryGreen
+                colorHex: AppTheme.primaryGreen.hexString,
+                isEssential: true
             )
             
             budgetCategories.append(savingsCategory)
@@ -245,18 +300,23 @@ class CategoryMappingSystem {
         
         let db = Firestore.firestore()
         db.collection("users/\(userId)/categoryMappings").getDocuments { [weak self] snapshot, error in
-            guard let self = self, error == nil else {
+            guard error == nil else {
                 print("Error loading category mappings: \(error?.localizedDescription ?? "Unknown error")")
                 return
             }
-            
-            if let documents = snapshot?.documents {
-                for document in documents {
-                    if let plaidCategory = document.data()["plaidCategory"] as? String,
-                       let budgetCategory = document.data()["budgetCategory"] as? String {
-                        self.categoryMappings[plaidCategory] = budgetCategory
-                    }
+
+            // Build a plain (Sendable) dictionary inside the Firestore callback,
+            // then hop to the main actor to mutate the isolated state.
+            var loaded: [String: String] = [:]
+            for document in snapshot?.documents ?? [] {
+                if let plaidCategory = document.data()["plaidCategory"] as? String,
+                   let budgetCategory = document.data()["budgetCategory"] as? String {
+                    loaded[plaidCategory] = budgetCategory
                 }
+            }
+
+            Task { @MainActor in
+                self?.categoryMappings.merge(loaded) { _, new in new }
             }
         }
     }
@@ -280,318 +340,5 @@ class CategoryMappingSystem {
                 print("Error saving category mapping: \(error.localizedDescription)")
             }
         }
-    }
-}
-
-import SwiftUI
-
-struct CategoryMappingEditorView: View {
-    let budgetCategory: String
-    @Binding var associatedCategories: [String]
-    let potentialCategories: [String]
-    let onSave: () -> Void
-    
-    @Environment(\.presentationMode) var presentationMode
-    @State private var searchText = ""
-    @State private var selectedCategories: [String] = []
-    
-    var filteredCategories: [String] {
-        if searchText.isEmpty {
-            return potentialCategories
-        } else {
-            return potentialCategories.filter { $0.lowercased().contains(searchText.lowercased()) }
-        }
-    }
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                AppTheme.backgroundGradient
-                    .ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    // Header explanation
-                    VStack(spacing: 12) {
-                        Image(systemName: "arrow.triangle.swap")
-                            .font(.system(size: 40))
-                            .foregroundColor(AppTheme.accentBlue)
-                            .padding(.top, 20)
-                        
-                        Text("Map Plaid Categories")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Text("Select Plaid transaction categories to map to your \"\(budgetCategory)\" budget category")
-                            .font(.subheadline)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            .padding(.horizontal, 20)
-                    }
-                    
-                    // Search bar
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            .padding(.leading, 12)
-                        
-                        TextField("Search categories", text: $searchText)
-                            .foregroundColor(AppTheme.textColor)
-                            .padding(.vertical, 10)
-                        
-                        if !searchText.isEmpty {
-                            Button(action: {
-                                searchText = ""
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            }
-                            .padding(.trailing, 12)
-                        }
-                    }
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(10)
-                    .padding(.horizontal, 20)
-                    
-                    // Currently selected categories
-                    if !selectedCategories.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Selected Categories")
-                                .font(.headline)
-                                .foregroundColor(AppTheme.textColor)
-                                .padding(.leading, 20)
-                            
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(selectedCategories, id: \.self) { category in
-                                        HStack(spacing: 5) {
-                                            Text(category)
-                                                .font(.caption)
-                                                .foregroundColor(AppTheme.textColor)
-                                                .lineLimit(1)
-                                            
-                                            Button(action: {
-                                                removeSelectedCategory(category)
-                                            }) {
-                                                Image(systemName: "xmark.circle.fill")
-                                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
-                                                    .font(.system(size: 14))
-                                            }
-                                        }
-                                        .padding(.vertical, 6)
-                                        .padding(.horizontal, 10)
-                                        .background(AppTheme.primaryGreen.opacity(0.2))
-                                        .cornerRadius(15)
-                                    }
-                                }
-                                .padding(.horizontal, 20)
-                            }
-                        }
-                    }
-                    
-                    // Categories list
-                    List {
-                        ForEach(filteredCategories, id: \.self) { category in
-                            HStack {
-                                Text(category)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Spacer()
-                                
-                                if selectedCategories.contains(category) || associatedCategories.contains(category) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(AppTheme.primaryGreen)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                toggleCategory(category)
-                            }
-                            .listRowBackground(AppTheme.cardBackground)
-                        }
-                    }
-                    .listStyle(PlainListStyle())
-                    .environment(\.defaultMinListRowHeight, 44)
-                    
-                    // Info text
-                    Text("Mapping Plaid categories to your budget categories ensures that transactions are correctly categorized in your budget reports.")
-                        .font(.caption)
-                        .foregroundColor(AppTheme.textColor.opacity(0.6))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-                }
-            }
-            .navigationTitle("Map Categories")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveChanges()
-                    }
-                    .foregroundColor(AppTheme.primaryGreen)
-                    .fontWeight(.semibold)
-                }
-            }
-            .onAppear {
-                // Initialize selected categories with already associated ones
-                selectedCategories = associatedCategories
-            }
-        }
-    }
-    
-    // MARK: - Actions
-    
-    private func toggleCategory(_ category: String) {
-        if selectedCategories.contains(category) {
-            removeSelectedCategory(category)
-        } else {
-            selectedCategories.append(category)
-        }
-    }
-    
-    private func removeSelectedCategory(_ category: String) {
-        selectedCategories.removeAll { $0 == category }
-    }
-    
-    private func saveChanges() {
-        // Update the associated categories
-        associatedCategories = selectedCategories
-        
-        // Call the save handler
-        onSave()
-        
-        // Dismiss the sheet
-        presentationMode.wrappedValue.dismiss()
-    }
-}
-
-class PlaidCategoryMapper {
-    static let shared = PlaidCategoryMapper()
-    
-    // Map of Plaid categories to your budget categories
-    private var categoryMappings: [String: String] = [
-        // Food & Dining
-        "Food and Drink": "Food & Dining",
-        "Restaurants": "Food & Dining",
-        "Coffee Shop": "Food & Dining",
-        
-        // Shopping
-        "Shopping": "Shopping",
-        "General Merchandise": "Shopping",
-        
-        // Transportation
-        "Travel": "Transportation",
-        "Taxi": "Transportation",
-        "Public Transportation": "Transportation",
-        
-        // Bills & Utilities
-        "Utilities": "Bills & Utilities",
-        "Rent": "Housing",
-        "Mortgage": "Housing",
-        
-        // Entertainment
-        "Entertainment": "Entertainment",
-        "Movies": "Entertainment",
-        "Music": "Entertainment",
-        
-        // Health & Fitness
-        "Healthcare": "Health & Fitness",
-        "Pharmacy": "Health & Fitness",
-        
-        // Savings & Investment
-        "Transfer": "Savings",
-        "Investment": "Investments",
-        
-        // Income categories
-        "Deposit": "Income",
-        "Payroll": "Income"
-    ]
-    
-    // Get budget category for a Plaid category
-    func getBudgetCategory(for plaidCategory: String) -> String {
-        // First check for direct mapping
-        if let budgetCategory = categoryMappings[plaidCategory] {
-            return budgetCategory
-        }
-        
-        // Check for partial matches
-        for (plaidKey, budgetValue) in categoryMappings {
-            if plaidCategory.lowercased().contains(plaidKey.lowercased()) {
-                return budgetValue
-            }
-        }
-        
-        // Default fallback
-        return "Other"
-    }
-    
-    // Get icon for a budget category
-    func getIconForCategory(_ category: String) -> String {
-        let c = category.lowercased()
-        
-        if c.contains("food") || c.contains("dining") {
-            return "fork.knife"
-        } else if c.contains("shop") {
-            return "cart.fill"
-        } else if c.contains("transport") {
-            return "car.fill"
-        } else if c.contains("bill") || c.contains("utilities") {
-            return "bolt.fill"
-        } else if c.contains("entertain") {
-            return "play.tv"
-        } else if c.contains("health") {
-            return "heart.fill"
-        } else if c.contains("housing") || c.contains("rent") {
-            return "house.fill"
-        } else if c.contains("income") {
-            return "arrow.down.circle.fill"
-        } else if c.contains("saving") {
-            return "banknote.fill"
-        } else if c.contains("investment") {
-            return "chart.line.uptrend.xyaxis"
-        }
-        
-        return "tag.fill" // Default
-    }
-    
-    // Get color for a budget category
-    func getColorForCategory(_ category: String) -> Color {
-        let c = category.lowercased()
-        
-        if c.contains("food") || c.contains("dining") {
-            return AppTheme.primaryGreen
-        } else if c.contains("shop") {
-            return AppTheme.accentBlue
-        } else if c.contains("transport") {
-            return AppTheme.accentPurple
-        } else if c.contains("bill") || c.contains("utilities") {
-            return Color(hex: "#9370DB")
-        } else if c.contains("entertain") {
-            return Color(hex: "#FFD700")
-        } else if c.contains("health") {
-            return Color(hex: "#FF5757")
-        } else if c.contains("housing") || c.contains("rent") {
-            return Color(hex: "#CD853F")
-        } else if c.contains("income") {
-            return AppTheme.primaryGreen
-        } else if c.contains("saving") {
-            return Color(hex: "#50C878")
-        } else if c.contains("investment") {
-            return Color(hex: "#4682B4")
-        }
-        
-        // Generate a consistent color based on the category name
-        let hash = category.hashValue
-        return Color(
-            hue: Double(abs(hash % 256)) / 256.0,
-            saturation: 0.7,
-            brightness: 0.9
-        )
     }
 }

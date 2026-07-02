@@ -11,11 +11,12 @@ import SwiftUI
 struct PennywiseApp: App {
     @UIApplicationDelegateAdaptor(FirebaseAppDelegate.self) var delegate
     
-    @StateObject private var launchScreenManager = LaunchScreenManager()
-    @StateObject private var authService = AuthenticationService.shared
-    @StateObject private var plaidManager = PlaidManager.shared
+    @State private var launchScreenManager = LaunchScreenManager()
     
     @Environment(\.scenePhase) private var scenePhase
+    
+    // Dependency container
+    private let container = DependencyContainer.shared
     
     init() {
         configureAppAppearance()
@@ -24,18 +25,14 @@ struct PennywiseApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                AppCoordinator()
-                    .environmentObject(launchScreenManager)
-                    .environmentObject(authService)
-                    .environmentObject(plaidManager)
+                NewAppCoordinator()
                     .preferredColorScheme(.dark)
-                    .onChange(of: scenePhase) { newPhase in
+                    .onChange(of: scenePhase) { oldPhase, newPhase in
                         handleScenePhaseChange(newPhase)
                     }
                 
                 if launchScreenManager.showLaunchScreen {
-                    LaunchScreenView()
-                        .environmentObject(launchScreenManager)
+                    LaunchScreenView(launchScreenManager: launchScreenManager)
                         .transition(.opacity)
                         .zIndex(1)
                 }
@@ -46,9 +43,8 @@ struct PennywiseApp: App {
     // MARK: - Helper Methods
     
     private func configureAppAppearance() {
-        UIApplication.shared.windows.forEach { window in
-            window.overrideUserInterfaceStyle = .dark
-        }
+        // Windows access is handled per-window-scene in modern iOS
+        // Use windowScene.windows instead of UIApplication.shared.windows
         
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
@@ -74,14 +70,14 @@ struct PennywiseApp: App {
         switch newPhase {
         case .active:
             print("App became active")
-            if authService.isAuthenticated {
-            }
+            // App is active
         case .inactive:
             print("App became inactive")
         case .background:
             print("App went to background")
-            if authService.requireBiometricsOnOpen {
-                authService.resetBiometricCheck()
+            // Handle biometric reset if needed
+            if container.authRepository.isAuthenticated {
+                UserDefaults.standard.set(false, forKey: AppConstants.UserDefaults.hasPassedBiometricCheck)
             }
         @unknown default:
             print("Unknown scene phase")

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct LaunchScreenView: View {
-    @EnvironmentObject private var launchScreenManager: LaunchScreenManager
+    var launchScreenManager: LaunchScreenManager
     
     var body: some View {
         ZStack {

@@ -13,9 +13,9 @@ struct AuthErrorView: View {
     let error: Error
     
     var errorMessage: String {
-        if let authError = error as? NSError {
-            // Map Firebase Auth error codes to user-friendly messages
-            switch authError.code {
+        let authError = error as NSError
+        // Map Firebase Auth error codes to user-friendly messages
+        switch authError.code {
             case AuthErrorCode.invalidEmail.rawValue:
                 return "The email address is badly formatted."
             case AuthErrorCode.wrongPassword.rawValue:
@@ -34,9 +34,7 @@ struct AuthErrorView: View {
                 return "An error occurred: \(authError.localizedDescription)"
             }
         }
-        
-        return error.localizedDescription
-    }
+
     
     var body: some View {
         HStack {

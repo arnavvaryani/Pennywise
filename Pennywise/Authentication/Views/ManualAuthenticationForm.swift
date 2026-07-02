@@ -8,11 +8,7 @@
 import SwiftUI
 
 struct ManualAuthenticationForm: View {
-    @StateObject private var authService = AuthenticationService.shared
-    @State private var email = ""
-    @State private var password = ""
-    @State private var errorMessage = ""
-    @State private var isLoading = false
+    @Bindable var viewModel: LoginViewModel
     var onSuccess: () -> Void
     
     var body: some View {
@@ -23,7 +19,7 @@ struct ManualAuthenticationForm: View {
                     .font(.subheadline)
                     .foregroundColor(AppTheme.textColor.opacity(0.8))
                 
-                TextField("", text: $email)
+                TextField("", text: $viewModel.email)
                     .padding()
                     .background(AppTheme.cardBackground)
                     .cornerRadius(10)
@@ -42,7 +38,7 @@ struct ManualAuthenticationForm: View {
                     .font(.subheadline)
                     .foregroundColor(AppTheme.textColor.opacity(0.8))
                 
-                SecureField("", text: $password)
+                SecureField("", text: $viewModel.password)
                     .padding()
                     .background(AppTheme.cardBackground)
                     .cornerRadius(10)
@@ -54,8 +50,8 @@ struct ManualAuthenticationForm: View {
             }
             
             // Error message if any
-            if !errorMessage.isEmpty {
-                Text(errorMessage)
+            if !viewModel.errorMessage.isEmpty {
+                Text(viewModel.errorMessage)
                     .font(.caption)
                     .foregroundColor(AppTheme.expenseColor)
                     .padding(.top, 5)
@@ -63,10 +59,15 @@ struct ManualAuthenticationForm: View {
             
             // Sign in button
             Button(action: {
-                attemptSignIn()
+                Task {
+                    await viewModel.signIn()
+                    if viewModel.isAuthenticated {
+                        onSuccess()
+                    }
+                }
             }) {
                 HStack {
-                    if isLoading {
+                    if viewModel.isLoading {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                             .padding(.trailing, 5)
@@ -80,29 +81,11 @@ struct ManualAuthenticationForm: View {
                 .background(AppTheme.primaryGreen)
                 .foregroundColor(.white)
                 .cornerRadius(10)
-                .opacity(isLoading ? 0.7 : 1.0)
+                .opacity(viewModel.isLoading ? 0.7 : 1.0)
             }
-            .disabled(email.isEmpty || password.isEmpty || isLoading)
+            .disabled(viewModel.email.isEmpty || viewModel.password.isEmpty || viewModel.isLoading)
             .padding(.top, 10)
         }
         .padding()
-    }
-    
-    private func attemptSignIn() {
-        isLoading = true
-        errorMessage = ""
-        
-        authService.signInWithEmail(email: email, password: password) { result in
-            DispatchQueue.main.async {
-                isLoading = false
-                
-                switch result {
-                case .success:
-                    onSuccess()
-                case .failure(let error):
-                    errorMessage = error.localizedDescription
-                }
-            }
-        }
     }
 }

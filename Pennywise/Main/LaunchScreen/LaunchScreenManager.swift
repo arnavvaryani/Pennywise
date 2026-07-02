@@ -8,20 +8,23 @@
 
 import SwiftUI
 import Firebase
-import Combine
+import Observation
 
 // MARK: - Launch Screen Manager
-class LaunchScreenManager: ObservableObject {
-    @Published var showLaunchScreen: Bool = true
-    @Published var animate: Bool = false
-    @Published var appReady: Bool = false
+@Observable
+@MainActor
+class LaunchScreenManager {
+    var showLaunchScreen: Bool = true
+    var animate: Bool = false
+    var appReady: Bool = false
     
     func dismissLaunchScreen() {
         // First animate the launch screen
         animate = true
         
         // After animation completes, dismiss the launch screen
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+        Task {
+            try? await Task.sleep(nanoseconds: 800_000_000) // 0.8 seconds
             withAnimation {
                 self.showLaunchScreen = false
             }
@@ -29,35 +32,24 @@ class LaunchScreenManager: ObservableObject {
     }
     
     func setupApp() {
-        // Initialize services and perform startup tasks
-        let plaidManager = PlaidManager.shared
-        
-        // Initialize services in parallel
-        let group = DispatchGroup()
-        
-        // Check auth state
-        group.enter()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            // Simulate auth check completion
-            group.leave()
-        }
-        
-        // Prepare Plaid link
-        group.enter()
-        plaidManager.prepareLinkController()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            group.leave()
-        }
-        
-        // When all initialization is complete
-        group.notify(queue: .main) {
-            // Allow sufficient time for splash screen animation before marking app as ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.appReady = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.dismissLaunchScreen()
+        Task {
+            let container = DependencyContainer.shared
+            
+            if container.authRepository.isAuthenticated,
+               container.plaidRepository.isPlaidLinked {
+                // Warm up Plaid-driven data before showing the main UI
+                do {
+                    let useCase = container.makeFetchTransactionsUseCase()
+                    _ = try await useCase.execute()
+                } catch {
+                    // If Plaid or network fails, continue to avoid blocking app launch
+                    print("Initial Plaid data load failed: \(error)")
                 }
             }
+            
+            // Mark app as ready and dismiss launch screen
+            self.appReady = true
+            self.dismissLaunchScreen()
         }
     }
 }

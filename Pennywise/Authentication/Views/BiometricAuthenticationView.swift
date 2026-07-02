@@ -10,16 +10,14 @@ import SwiftUI
 import LocalAuthentication
 
 struct BiometricAuthenticationView: View {
-    @StateObject private var authService = AuthenticationService.shared
-    @Binding var isAuthenticated: Bool
+    var viewModel: BiometricViewModel
+    @Binding var isPresented: Bool
+    var onSignOut: () -> Void
     @State private var showAlert = false
-    @State private var alertMessage = ""
-    @State private var isLoading = false
     @State private var authenticateOnAppear = true
-    @State private var navigateToFinanceRoot = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background gradient
                 LinearGradient(
@@ -50,8 +48,8 @@ struct BiometricAuthenticationView: View {
                         .frame(width: 80, height: 80)
                         .foregroundColor(AppTheme.primaryGreen)
                         .shadow(color: AppTheme.primaryGreen.opacity(0.5), radius: 10)
-                        .scaleEffect(isLoading ? 1.05 : 1.0)
-                        .animation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isLoading)
+                        .scaleEffect(viewModel.isLoading ? 1.05 : 1.0)
+                        .animation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: viewModel.isLoading)
                     
                     Text("Biometric Authentication")
                         .font(.largeTitle)
@@ -59,8 +57,8 @@ struct BiometricAuthenticationView: View {
                         .foregroundColor(.white)
                     
                     // Biometric type message
-                    if authService.getBiometricType() != .none {
-                        Text("Please use \(authService.getBiometricType().name) to verify your identity")
+                    if viewModel.isBiometricAvailable {
+                        Text("Please use \(viewModel.biometricDisplayName) to verify your identity")
                             .font(.headline)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.white.opacity(0.8))
@@ -76,14 +74,22 @@ struct BiometricAuthenticationView: View {
                     // Authentication buttons
                     VStack(spacing: 15) {
                         // Biometric button - only show if biometrics are available
-                        if authService.getBiometricType() != .none {
+                        if viewModel.isBiometricAvailable {
                             Button(action: {
-                                authenticate()
+                                Task {
+                                    let success = await viewModel.authenticate()
+                                    if success {
+                                        UserDefaults.standard.set(true, forKey: AppConstants.UserDefaults.hasPassedBiometricCheck)
+                                        isPresented = false
+                                    } else if !viewModel.errorMessage.isEmpty {
+                                        showAlert = true
+                                    }
+                                }
                             }) {
                                 HStack {
-                                    Image(systemName: authService.getBiometricType() == .faceID ? "faceid" : "touchid")
+                                    Image(systemName: viewModel.biometricIcon)
                                         .font(.headline)
-                                    Text("Authenticate with \(authService.getBiometricType().name)")
+                                    Text("Authenticate with \(viewModel.biometricDisplayName)")
                                         .font(.headline)
                                 }
                                 .frame(maxWidth: .infinity)
@@ -95,15 +101,13 @@ struct BiometricAuthenticationView: View {
                             .buttonStyle(ScaleButtonStyle())
                             .padding(.horizontal, 40)
                             .padding(.top, 20)
-                            .disabled(isLoading)
-                            .opacity(isLoading ? 0.7 : 1.0)
+                            .disabled(viewModel.isLoading)
+                            .opacity(viewModel.isLoading ? 0.7 : 1.0)
                         }
                         
                         // Sign out option
                         Button(action: {
-                            // Sign out and go back to login
-                            authService.signOut()
-                            isAuthenticated = false
+                            onSignOut()
                         }) {
                             Text("Sign Out")
                                 .foregroundColor(.white.opacity(0.7))
@@ -113,19 +117,11 @@ struct BiometricAuthenticationView: View {
                     .padding(.top, 10)
                     
                     Spacer()
-                    
-                    // Hidden NavigationLink that gets activated when authentication succeeds
-                    NavigationLink(
-                                            destination: FinanceRootView()
-                                                .navigationBarBackButtonHidden(true),
-                                            isActive: $navigateToFinanceRoot,
-                                            label: { EmptyView() }
-                                        )
                 }
                 .padding()
                 
                 // Loading overlay
-                if isLoading {
+                if viewModel.isLoading {
                     Color.black.opacity(0.4)
                         .edgesIgnoringSafeArea(.all)
                         .transition(.opacity)
@@ -137,8 +133,15 @@ struct BiometricAuthenticationView: View {
             }
             .onAppear {
                 if authenticateOnAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        authenticate()
+                    Task {
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                        let success = await viewModel.authenticate()
+                        if success {
+                            UserDefaults.standard.set(true, forKey: AppConstants.UserDefaults.hasPassedBiometricCheck)
+                            isPresented = false
+                        } else if !viewModel.errorMessage.isEmpty {
+                            showAlert = true
+                        }
                     }
                     authenticateOnAppear = false
                 }
@@ -146,72 +149,20 @@ struct BiometricAuthenticationView: View {
             .alert(isPresented: $showAlert) {
                 Alert(
                     title: Text("Authentication Failed"),
-                    message: Text(alertMessage),
+                    message: Text(viewModel.errorMessage),
                     dismissButton: .default(Text("Try Again"), action: {
-                        authenticate()
+                        Task {
+                            let success = await viewModel.authenticate()
+                            if success {
+                                UserDefaults.standard.set(true, forKey: AppConstants.UserDefaults.hasPassedBiometricCheck)
+                                isPresented = false
+                            } else if !viewModel.errorMessage.isEmpty {
+                                showAlert = true
+                            }
+                        }
                     })
                 )
             }
-        }
-        .navigationViewStyle(StackNavigationViewStyle()) // Use stack navigation for consistency
-    }
-    
-    private func authenticate() {
-        isLoading = true
-        
-        let reason = "Log in to your Pennywise account using \(authService.getBiometricType().name)"
-        
-        authService.authenticateWithBiometrics(reason: reason) { success, error in
-            DispatchQueue.main.async {
-                isLoading = false
-                
-                if success {
-                    withAnimation {
-                        // Set authenticated state
-                        isAuthenticated = true
-                        
-                        // Trigger navigation to FinanceRootView
-                        navigateToFinanceRoot = true
-                    }
-                } else {
-                    handleAuthenticationError(error)
-                }
-            }
-        }
-    }
-    
-    private func handleAuthenticationError(_ error: Error?) {
-        if let error = error as NSError? {
-            switch error.code {
-            case LAError.userCancel.rawValue:
-                break
-                
-            case LAError.biometryNotAvailable.rawValue:
-                alertMessage = "Biometric authentication is not available on this device."
-                showAlert = true
-                
-            case LAError.biometryNotEnrolled.rawValue:
-                alertMessage = "Please set up \(authService.getBiometricType().name) in your device settings."
-                showAlert = true
-                
-            case LAError.biometryLockout.rawValue:
-                alertMessage = "Too many failed attempts. Please use your device passcode to re-enable \(authService.getBiometricType().name)."
-                showAlert = true
-                
-            case LAError.authenticationFailed.rawValue:
-                alertMessage = "Authentication failed. Please try again."
-                showAlert = true
-                
-            default:
-                alertMessage = "Authentication failed: \(error.localizedDescription)"
-                showAlert = true
-            }
-        } else if let error = error {
-            alertMessage = "Authentication failed: \(error.localizedDescription)"
-            showAlert = true
-        } else {
-            alertMessage = "Authentication failed. Please try again."
-            showAlert = true
         }
     }
 }

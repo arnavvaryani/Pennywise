@@ -11,11 +11,12 @@ struct AppTheme {
     // MARK: - Colors
     
     // Primary colors - with better contrast for accessibility
-    static let primary = Color(hex: "#0047AB")          // Cobalt Blue
-    static let secondary = Color(hex: "#4682B4")        // Steel Blue
-    static let primaryGreen = Color(hex: "#7FE660")     // Bright Green
-    static let accentBlue = Color(hex: "#56D6DA")       // Teal Blue
-    static let accentPurple = Color(hex: "#6074DD")     // Purple
+    // Updated to match dark teal / neon cyan wallet design
+    static let primary = Color(hex: "#00F5FF")          // Neon Cyan
+    static let secondary = Color(hex: "#00C9FF")        // Bright Teal-Blue
+    static let primaryGreen = Color(hex: "#00FFC2")     // Mint Green accent
+    static let accentBlue = Color(hex: "#00E0FF")       // Soft Cyan
+    static let accentPurple = Color(hex: "#1B2A3C")     // Deep blue-teal accent
     static let textColor = Color.adaptiveText           // Adaptive text color
     
     // Background colors - adaptive for light/dark mode
@@ -37,69 +38,18 @@ struct AppTheme {
     
     // MARK: - Gradients
     
-    // Background gradient used throughout the app - adapts to color scheme
+    // Background "gradient" now represented as a flat color for a clean, modern look.
     static var backgroundGradient: LinearGradient {
         LinearGradient(
-            gradient: Gradient(colors: [
-                backgroundPrimary,
-                backgroundSecondary,
-                backgroundPrimary
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+            gradient: Gradient(colors: [backgroundPrimary, backgroundPrimary]),
+            startPoint: .top,
+            endPoint: .bottom
         )
     }
     
-    // Enhanced gradient with highlights
+    // Enhanced background now uses the same flat color for consistency.
     static var enhancedBackgroundGradient: some View {
-        ZStack {
-            // Base blue gradient that matches the reference image
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    backgroundPrimary.opacity(0.8),
-                    backgroundPrimary,
-                    backgroundSecondary,
-                    backgroundPrimary.opacity(0.9),
-                    backgroundPrimary.opacity(0.85)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .edgesIgnoringSafeArea(.all)
-            
-            // Subtle teal highlight in top-right area
-            RadialGradient(
-                gradient: Gradient(colors: [
-                    accentBlue.opacity(0.3),  // Teal
-                    Color.clear
-                ]),
-                center: UnitPoint(x: 0.8, y: 0.2),  // Top right area
-                startRadius: 5,
-                endRadius: 300
-            )
-            
-            // Very subtle green highlight top-left
-            RadialGradient(
-                gradient: Gradient(colors: [
-                    primaryGreen.opacity(0.15),  // Green
-                    Color.clear
-                ]),
-                center: UnitPoint(x: 0.2, y: 0.3),  // Top left area
-                startRadius: 10,
-                endRadius: 250
-            )
-            
-            // Purple accent in bottom-middle
-            RadialGradient(
-                gradient: Gradient(colors: [
-                    accentPurple.opacity(0.25),  // Purple
-                    Color.clear
-                ]),
-                center: UnitPoint(x: 0.5, y: 0.8), // Bottom middle
-                startRadius: 5,
-                endRadius: 200
-            )
-        }
+        Color(backgroundPrimary)
     }
     
     // Gradient for primary actions
@@ -148,25 +98,14 @@ struct AppTheme {
     
     // MARK: - Responsive Modifiers
     
-    // Apply horizontal padding based on screen size
-    static func responsiveHorizontalPadding() -> CGFloat {
-        let screenWidth = UIScreen.main.bounds.width
-        if screenWidth > 400 {
-            return 24
-        } else {
-            return 16
-        }
-    }
+    // MARK: - Responsive Padding helpers (use modifiers instead)
     
-    // Dynamic card padding based on screen size
-    static func cardPadding() -> EdgeInsets {
-        let screenWidth = UIScreen.main.bounds.width
-        if screenWidth > 400 {
-            return EdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20)
-        } else {
-            return EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
-        }
-    }
+    static let horizontalPaddingCompact: CGFloat = 16
+    static let horizontalPaddingRegular: CGFloat = 24
+    
+    static let cardPaddingCompact = EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
+    static let cardPaddingRegular = EdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20)
+
     
     // MARK: - Shadow Styles
     
@@ -244,7 +183,7 @@ extension Color {
     static var adaptiveBackground: Color {
         Color(UIColor { traitCollection in
             return traitCollection.userInterfaceStyle == .dark ?
-                   UIColor(hex: "#0F2549") :
+                   UIColor(hex: "#02040A") :   // Deep nearly-black blue
                    UIColor(hex: "#F8F9FA")
         })
     }
@@ -252,7 +191,7 @@ extension Color {
     static var adaptivePrimary: Color {
         Color(UIColor { traitCollection in
             return traitCollection.userInterfaceStyle == .dark ?
-                   UIColor(hex: "#121212") :
+                   UIColor(hex: "#050811") :   // Card base on dark
                    UIColor(hex: "#FFFFFF")
         })
     }
@@ -260,7 +199,7 @@ extension Color {
     static var adaptiveSecondary: Color {
         Color(UIColor { traitCollection in
             return traitCollection.userInterfaceStyle == .dark ?
-                   UIColor(hex: "#1E1E1E") :
+                   UIColor(hex: "#041321") :   // Dark teal secondary
                    UIColor(hex: "#F0F0F0")
         })
     }
@@ -268,15 +207,15 @@ extension Color {
     static var adaptiveStroke: Color {
         Color(UIColor { traitCollection in
             return traitCollection.userInterfaceStyle == .dark ?
-                   UIColor(red: 0.34, green: 0.84, blue: 0.85, alpha: 0.2) :
-                   UIColor(red: 0.34, green: 0.84, blue: 0.85, alpha: 0.3)
+                   UIColor(red: 0.00, green: 0.86, blue: 1.00, alpha: 0.35) :
+                   UIColor(red: 0.00, green: 0.75, blue: 0.96, alpha: 0.45)
         })
     }
     
     static var adaptiveCardBackground: Color {
         Color(UIColor { traitCollection in
             return traitCollection.userInterfaceStyle == .dark ?
-                   UIColor(red: 0.37, green: 0.45, blue: 0.87, alpha: 0.15) :
+                   UIColor(red: 0.04, green: 0.12, blue: 0.20, alpha: 0.9) :
                    UIColor(white: 1.0, alpha: 0.95)
         })
     }
@@ -372,13 +311,7 @@ extension UIColor {
 extension View {
     // Apply consistent card styling
     func cardStyle(padding: EdgeInsets? = nil) -> some View {
-        self.padding(padding ?? AppTheme.cardPadding())
-            .background(AppTheme.cardBackground)
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(AppTheme.cardStroke, lineWidth: 1)
-            )
+        modifier(CardStyleModifier(customPadding: padding))
     }
     
     // Apply consistent primary button styling
@@ -398,7 +331,7 @@ extension View {
     
     // Apply responsive horizontal padding
     func responsivePadding() -> some View {
-        self.padding(.horizontal, AppTheme.responsiveHorizontalPadding())
+        modifier(ResponsivePaddingModifier())
     }
 }
 

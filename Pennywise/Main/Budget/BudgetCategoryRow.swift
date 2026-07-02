@@ -41,12 +41,12 @@ struct BudgetCategoryRow: View {
                     // Category icon
                     ZStack {
                         Circle()
-                            .fill(category.color.opacity(0.2))
+                            .fill(Color(hex: category.colorHex).opacity(0.2))
                             .frame(width: 46, height: 46)
                         
                         Image(systemName: category.icon)
                             .font(.system(size: 20))
-                            .foregroundColor(category.color)
+                            .foregroundColor(Color(hex: category.colorHex))
                     }
                     
                     // Category name and details
@@ -61,7 +61,7 @@ struct BudgetCategoryRow: View {
                                 .fill(statusColor)
                                 .frame(width: 6, height: 6)
                             
-                            Text("Spent: $\(Int(spent)) of $\(Int(category.amount))")
+                            Text("Spent: \(CurrencyFormatter.format(spent)) of \(CurrencyFormatter.format(category.amount))")
                                 .font(.caption)
                                 .foregroundColor(AppTheme.textColor.opacity(0.7))
                         }
@@ -71,7 +71,7 @@ struct BudgetCategoryRow: View {
                     
                     // Amount display without edit button
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("$\(Int(category.amount))")
+                        Text("\(CurrencyFormatter.format(category.amount))")
                             .font(.headline)
                             .foregroundColor(AppTheme.textColor)
                         
@@ -84,17 +84,20 @@ struct BudgetCategoryRow: View {
                 // Progress bar
                 VStack(alignment: .leading, spacing: 6) {
                     // Progress bar
-                    ZStack(alignment: .leading) {
-                        // Background
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(AppTheme.cardStroke)
-                            .frame(height: 8)
-                        
-                        // Progress
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(statusColor)
-                            .frame(width: max(CGFloat(progress) * UIScreen.main.bounds.width * 0.8, 4), height: 8)
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            // Background
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(AppTheme.cardStroke)
+                                .frame(height: 8)
+                            
+                            // Progress
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(statusColor)
+                                .frame(width: max(CGFloat(progress) * geometry.size.width, 4), height: 8)
+                        }
                     }
+                    .frame(height: 8)
                     
                     // Info row
                     HStack {
@@ -109,7 +112,7 @@ struct BudgetCategoryRow: View {
                         Spacer()
                         
                         // Remaining
-                        Text("Remaining: $\(Int(max(0, category.amount - spent)))")
+                        Text("Remaining: \(CurrencyFormatter.format(max(0, category.amount - spent)))")
                             .font(.caption)
                             .foregroundColor(AppTheme.textColor.opacity(0.7))
                     }
@@ -118,11 +121,6 @@ struct BudgetCategoryRow: View {
             .padding(16)
         }
         .buttonStyle(PlainButtonStyle())
-        .background(AppTheme.cardBackground)
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(AppTheme.cardStroke, lineWidth: 1)
-        )
+        .pwGlassSurface(cornerRadius: 16)
     }
 }

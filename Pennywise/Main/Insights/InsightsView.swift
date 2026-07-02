@@ -1,25 +1,22 @@
-//
-//  InsightsView.swift
-//  Pennywise
-//
-//  Created by Arnav Varyani on 4/8/25.
-//
-
 import SwiftUI
 import Charts
 
 struct InsightsView: View {
-    @EnvironmentObject var plaidManager: PlaidManager
+    // MARK: - Dependencies
+    var viewModel: InsightsViewModel
+    private let container = DependencyContainer.shared
+    @EnvironmentObject private var navigationManager: NavigationManager
+    @Environment(\.dismiss) private var dismiss
     
     // State variables
     @State private var selectedTimeframe: TimeFrame = .month
     @State private var selectedTab = 0
     @State private var isRefreshing = false
     @State private var selectedCategoryIndex: Int? = nil
-    @State private var selectedTransaction: PlaidTransaction? = nil
-    @State private var showIncomeCategories = false // Toggle between expense and income categories
-    @State private var showIncomeSourceDetail: String? = nil // Selected income source for detail view
-    @State private var selectedCategoryForDetail: CategoryDetailInfo? = nil // Selected category for detail view
+//    @State private var selectedTransaction: Transaction? = nil
+    @State private var showingPlaidLink = false
+    @State private var isPreparingPlaidLink = false
+    @State private var plaidErrorMessage: String? = nil
     
     // Tab options
     let tabs = ["Overview", "Spending", "Income", "Categories"]
@@ -33,331 +30,283 @@ struct InsightsView: View {
         }
     }
     
-    private var transactionsInTimeframe: [PlaidTransaction] {
-        let calendar = Calendar.current
-        let now = Date()
-        
-        let startDate: Date
-        switch selectedTimeframe {
-        case .week:
-            startDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
-        case .month:
-            // Get the first day of the current month
-            var components = calendar.dateComponents([.year, .month], from: now)
-            components.day = 1
-            startDate = calendar.date(from: components) ?? calendar.date(byAdding: .month, value: -1, to: now) ?? now
-        case .year:
-            // Get the first day of the current year
-            var components = calendar.dateComponents([.year], from: now)
-            components.month = 1
-            components.day = 1
-            startDate = calendar.date(from: components) ?? calendar.date(byAdding: .year, value: -1, to: now) ?? now
-        }
-        
-        return plaidManager.transactions.filter { transaction in
-            transaction.date >= startDate && transaction.date <= now
-        }
-    }
-    
-    private var expenseTransactions: [PlaidTransaction] {
-        transactionsInTimeframe.filter { transaction in
-            transaction.amount > 0
-        }
-    }
-    
-    private var incomeTransactions: [PlaidTransaction] {
-        transactionsInTimeframe.filter { $0.amount < 0 }
-    }
-    
+    // MARK: - Derived from the prepared summary (all finance math lives in
+    // FetchInsightsUseCase; these are thin, math-free accessors for rendering).
+
+    private var summary: InsightsSummary? { viewModel.summary }
+
+    private var expenseTransactions: [Transaction] { summary?.expenseTransactions ?? [] }
+    private var incomeTransactions: [Transaction] { summary?.incomeTransactions ?? [] }
+    private var hasNoData: Bool { summary?.isEmpty ?? true }
+
     private var categoryBreakdown: [(String, Double)] {
-        // Group transactions by category and sum amounts
-        var categories: [String: Double] = [:]
-        
-        for transaction in expenseTransactions {
-            let category = transaction.category
-            categories[category, default: 0] += transaction.amount
-        }
-        
-        // Convert to array and sort by amount (highest first)
-        return categories.map { ($0.key, $0.value) }
-            .sorted { $0.1 > $1.1 }
+        (summary?.categoryBreakdown ?? []).map { ($0.name, $0.amount) }
     }
-    
-    // Income category breakdown
-    private var incomeCategoryBreakdown: [(String, Double)] {
-        // Group transactions by category and sum amounts
-        var categories: [String: Double] = [:]
-        
-        for transaction in incomeTransactions {
-            let category = transaction.category
-            categories[category, default: 0] += abs(transaction.amount)
-        }
-        
-        // Convert to array and sort by amount (highest first)
-        return categories.map { ($0.key, $0.value) }
-            .sorted { $0.1 > $1.1 }
-    }
-    
-    // Top vendors calculation
     private var topVendors: [(String, Double)] {
-        // Group expense transactions by vendor and sum amounts
-        var vendors: [String: Double] = [:]
-        
-        for transaction in expenseTransactions {
-            let merchant = transaction.merchantName.isEmpty ? "Unknown Vendor" : transaction.merchantName
-            vendors[merchant, default: 0] += transaction.amount
-        }
-        
-        // Convert to array and sort by amount (highest first)
-        return vendors.map { ($0.key, $0.value) }
-            .sorted { $0.1 > $1.1 }
-            .prefix(5)
-            .map { ($0.0, $0.1) }
+        (summary?.topVendors ?? []).map { ($0.name, $0.amount) }
     }
-    
-    private var totalSpending: Double {
-        expenseTransactions.reduce(0) { $0 + $1.amount }
-    }
-    
-    private var totalIncome: Double {
-        abs(incomeTransactions.reduce(0) { $0 + $1.amount })
-    }
-    
-    private var netCashflow: Double {
-        totalIncome - totalSpending
-    }
-    
-    // Income sources breakdown
     private var incomeSources: [(String, Double)] {
-        // Group income transactions by merchant name or type
-        var sources: [String: Double] = [:]
-        
-        for transaction in incomeTransactions {
-            // Use merchant name or a default if empty
-            let source = transaction.merchantName.isEmpty ? "Primary Income" : transaction.merchantName
-            sources[source, default: 0] += abs(transaction.amount)
-        }
-        
-        return sources.map { ($0.key, $0.value) }
-            .sorted { $0.1 > $1.1 }
+        (summary?.incomeSources ?? []).map { ($0.name, $0.amount) }
     }
-    
-    // Monthly income trend data
-    private var monthlyIncomeTrend: [(String, Double)] {
-        let calendar = Calendar.current
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMM"
-        
-        var monthlyData: [String: Double] = [:]
-        
-        // Get last 6 months
-        let currentDate = Date()
-        for i in 0..<6 {
-            if let date = calendar.date(byAdding: .month, value: -i, to: currentDate) {
-                let monthString = dateFormatter.string(from: date)
-                monthlyData[monthString] = 0
-            }
-        }
-        
-        // Sum income by month
-        for transaction in plaidManager.transactions.filter({ $0.amount < 0 }) {
-            let monthString = dateFormatter.string(from: transaction.date)
-            if monthlyData[monthString] != nil {
-                monthlyData[monthString]! += abs(transaction.amount)
-            }
-        }
-        
-        // Convert to array and sort by date
-        let monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        let now = Date()
-        let currentMonth = dateFormatter.string(from: now)
-        let currentMonthIndex = monthOrder.firstIndex(of: currentMonth) ?? 0
-        
-        var sortedMonths: [String] = []
-        for i in 0..<6 {
-            let index = (currentMonthIndex - i + 12) % 12
-            sortedMonths.append(monthOrder[index])
-        }
-        
-        return sortedMonths.reversed().compactMap { month in
-            if let amount = monthlyData[month] {
-                return (month, amount)
-            }
-            return nil
+    private var totalSpending: Double { summary?.totalSpending ?? 0 }
+    private var totalIncome: Double { summary?.totalIncome ?? 0 }
+    private var netCashflow: Double { summary?.netCashflow ?? 0 }
+    private var last30DaysSpending: Double { summary?.last30DaysSpending ?? 0 }
+    private var allTimeSpending: Double { summary?.allTimeSpending ?? 0 }
+    private var spendingVsIncomePercent: Int { summary?.spendingVsIncomePercent ?? 0 }
+
+    private var analysisBars: [MiniBarChart.Bar] {
+        (summary?.bars ?? []).map { MiniBarChart.Bar(value: $0.value, label: $0.label) }
+    }
+
+    private var analysisTimeframeLabel: String {
+        switch selectedTimeframe {
+        case .week: return "Week"
+        case .month: return "Month"
+        case .year: return "Year"
         }
     }
-    
-    // Get transactions for specific income source
-    private func transactionsForIncomeSource(_ source: String) -> [PlaidTransaction] {
-        return incomeTransactions.filter {
-            let merchant = $0.merchantName.isEmpty ? "Primary Income" : $0.merchantName
-            return merchant == source
-        }
-    }
-    
-    // Get transactions for a specific category
-    private func transactionsForCategory(_ category: String, isIncome: Bool) -> [PlaidTransaction] {
-        if isIncome {
-            return incomeTransactions.filter { $0.category == category }
-        } else {
-            return expenseTransactions.filter { $0.category == category }
-        }
-    }
-    
+
     var body: some View {
         ZStack {
-            // Background gradient
-            AppTheme.backgroundGradient
-                .edgesIgnoringSafeArea(.all)
-            
-            VStack(spacing: 0) {
-                // Header with time period selector
-                headerView
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                
-                // Tab selector
-                tabSelectorView
-                    .padding(.bottom, 4)
-                
-                // Main content area
-                if isRefreshing {
-                    loadingView
-                } else if transactionsInTimeframe.isEmpty {
-                    emptyStateView
-                } else {
-                    ScrollView {
-                        // Display content based on selected tab
-                        VStack(spacing: 20) {
-                            switch selectedTab {
-                            case 0:
-                                overviewTabContent
-                            case 1:
-                                spendingTabContent
-                            case 2:
-                                incomeTabContent
-                            case 3:
-                                categoriesTabContent
-                            default:
-                                overviewTabContent
-                            }
-                        }
-                        .padding(.top, 12)
-                        .padding(.bottom, 60)
+            AppTheme.enhancedBackgroundGradient
+
+            if isRefreshing {
+                loadingView
+            } else if hasNoData {
+                emptyStateView
+            } else {
+                ScrollView {
+                    VStack(spacing: 14) {
+                        summaryRow
+                            .padding(.top, 6)
+                        
+                        analysisCard
+                            .padding(.top, 6)
+                        
+                        totalSpentSection
+                            .padding(.top, 6)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 32)
+                }
+            }
+        }
+        .task {
+            await viewModel.load(timeframe: selectedTimeframe)
+        }
+        .onChange(of: selectedTimeframe) { _, newValue in
+            Task { await viewModel.load(timeframe: newValue) }
+        }
+        .fullScreenCover(isPresented: $showingPlaidLink) {
+            if let handler = container.plaidService.linkController {
+                PlaidLinkView(handler: handler) {
+                    showingPlaidLink = false
+                }
+                .onAppear {
+                    container.plaidService.onSuccess = {
+                        showingPlaidLink = false
+                        Task { await viewModel.load(timeframe: selectedTimeframe) }
+                    }
+                    container.plaidService.onLinkError = { error in
+                        showingPlaidLink = false
+                        plaidErrorMessage = error.localizedDescription
+                    }
+                    container.plaidService.onExit = {
+                        showingPlaidLink = false
                     }
                 }
-            }
-        }
-        .onAppear {
-            // If we don't have transaction data, fetch it
-            if plaidManager.transactions.isEmpty {
-                isRefreshing = true
-                plaidManager.fetchTransactions { success in
-                    isRefreshing = false
+            } else {
+                ZStack {
+                    AppTheme.enhancedBackgroundGradient
+                    ProgressView("Preparing Plaid Link…")
+                        .foregroundStyle(AppTheme.textColor)
                 }
             }
         }
-        .sheet(item: $selectedTransaction) { transaction in
-            TransactionDetailViewFirestore(transaction: transaction)
-                .environmentObject(plaidManager)
-        }
-        .sheet(item: Binding(
-            get: { showIncomeSourceDetail.map { IncomeSourceDetail(name: $0) } },
-            set: { showIncomeSourceDetail = $0?.name }
-        )) { detail in
-            incomeSourceDetailView(for: detail.name)
-        }
-        .sheet(item: $selectedCategoryForDetail) { categoryDetail in
-            categoryDetailView(for: categoryDetail.name, isIncome: categoryDetail.isIncome)
+        .alert("Plaid Link Error", isPresented: Binding(get: { plaidErrorMessage != nil }, set: { _ in plaidErrorMessage = nil })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(plaidErrorMessage ?? "")
         }
         .navigationTitle("Insights")
         .navigationBarTitleDisplayMode(.inline)
     }
+
+    // MARK: - Reference layout (Sport Activities style)
     
-    // MARK: - Header View
-    
-    private var headerView: some View {
+    private var topBar: some View {
         HStack {
-            Text("Financial Insights")
-                .font(.title2)
-                .fontWeight(.bold)
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(AppTheme.textColor.opacity(0.85))
+                    .frame(width: 42, height: 42)
+                    .glassEffect(.regular.interactive(), in: .circle)
+            }
+            .buttonStyle(ScaleButtonStyle())
+            
+            Spacer()
+            
+            Text("Spending Activities")
+                .font(.headline)
                 .foregroundColor(AppTheme.textColor)
             
             Spacer()
             
-            // Timeframe selector
-            HStack(spacing: 0) {
-                Button(action: {
-                    withAnimation {
-                        selectedTimeframe = .week
-                    }
-                }) {
-                    Text("Week")
-                        .font(.footnote)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(selectedTimeframe == .week ? AppTheme.primaryGreen : Color.clear)
-                        .foregroundColor(selectedTimeframe == .week ? .white : AppTheme.textColor.opacity(0.6))
-                        .cornerRadius(20)
-                }
-                
-                Button(action: {
-                    withAnimation {
-                        selectedTimeframe = .month
-                    }
-                }) {
-                    Text("Month")
-                        .font(.footnote)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(selectedTimeframe == .month ? AppTheme.primaryGreen : Color.clear)
-                        .foregroundColor(selectedTimeframe == .month ? .white : AppTheme.textColor.opacity(0.6))
-                        .cornerRadius(20)
-                }
-                
-                Button(action: {
-                    withAnimation {
-                        selectedTimeframe = .year
-                    }
-                }) {
-                    Text("Year")
-                        .font(.footnote)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(selectedTimeframe == .year ? AppTheme.primaryGreen : Color.clear)
-                        .foregroundColor(selectedTimeframe == .year ? .white : AppTheme.textColor.opacity(0.6))
-                        .cornerRadius(20)
-                }
-            }
-            .background(AppTheme.cardBackground)
-            .cornerRadius(20)
+            // Balance spacing with a hidden button
+            Circle()
+                .fill(Color.clear)
+                .frame(width: 42, height: 42)
         }
     }
     
-    // MARK: - Tab Selector
+    private var summaryRow: some View {
+        HStack(spacing: 12) {
+            summaryCard(
+                title: "Last 30 days",
+                value: -last30DaysSpending,
+                trailing: AnyView(
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(AppTheme.accentPurple.opacity(0.9))
+                )
+            )
+            
+            summaryCard(
+                title: "All time",
+                value: -allTimeSpending,
+                trailing: AnyView(ringPercentBadge(percent: spendingVsIncomePercent))
+            )
+        }
+    }
     
-    private var tabSelectorView: some View {
-        HStack(spacing: 0) {
-            ForEach(0..<tabs.count, id: \.self) { index in
-                Button(action: {
-                    withAnimation {
-                        selectedTab = index
+    private func summaryCard(title: String, value: Double, trailing: AnyView) -> some View {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundColor(AppTheme.textColor.opacity(0.65))
+                    
+                    Spacer()
+                    
+                    trailing
+                }
+                
+                Text("\(value < 0 ? "-" : "")\(CurrencyFormatter.format(abs(value)))")
+                    .font(.title3.weight(.bold))
+                    .foregroundColor(AppTheme.textColor)
+                    .monospacedDigit()
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    private func ringPercentBadge(percent: Int) -> some View {
+        ZStack {
+            Circle()
+                .stroke(AppTheme.cardStroke, lineWidth: 5)
+            
+            Circle()
+                .trim(from: 0, to: CGFloat(min(max(Double(percent) / 100.0, 0), 1)))
+                .stroke(AppTheme.accentPurple, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            
+            Text("\(percent)%")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(AppTheme.textColor.opacity(0.8))
+        }
+        .frame(width: 34, height: 34)
+    }
+    
+    private var analysisCard: some View {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Spending Analysis")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.textColor)
+                    
+                    Spacer()
+                    
+                    Menu {
+                        Button("Week") { selectedTimeframe = .week }
+                        Button("Month") { selectedTimeframe = .month }
+                        Button("Year") { selectedTimeframe = .year }
+                    } label: {
+                        PWPill(title: analysisTimeframeLabel, systemImage: "chevron.down", tint: AppTheme.cardBackground)
                     }
-                }) {
-                    Text(tabs[index])
-                        .font(.footnote)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity)
-                        .background(selectedTab == index ? AppTheme.primaryGreen : Color.clear)
-                        .foregroundColor(selectedTab == index ? .white : AppTheme.textColor.opacity(0.6))
+                }
+                
+                if let maxBar = analysisBars.max(by: { $0.value < $1.value }), maxBar.value > 0 {
+                    PWPill(
+                        title: "-\(CurrencyFormatter.format(maxBar.value))",
+                        tint: AppTheme.accentPurple,
+                        isSelected: true
+                    )
+                }
+                
+                MiniBarChart(bars: analysisBars, accent: AppTheme.accentPurple)
+            }
+        }
+    }
+    
+    private var totalSpentSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Total Spent")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.textColor)
+                    Text("\(timeframeTitle) total spend")
+                        .font(.caption)
+                        .foregroundColor(AppTheme.textColor.opacity(0.65))
+                }
+                
+                Spacer()
+                
+                let dateString = formattedShortDate(Date())
+                PWPill(title: dateString, systemImage: "calendar", tint: AppTheme.cardBackground)
+            }
+            
+            PWGlassCard {
+                if expenseTransactions.isEmpty {
+                    Text("No spending transactions in this period.")
+                        .font(.subheadline)
+                        .foregroundColor(AppTheme.textColor.opacity(0.7))
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 10)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(expenseTransactions.sorted(by: { $0.date > $1.date }).prefix(12).enumerated()), id: \.element.id) { idx, tx in
+                            Button {
+                                navigationManager.navigate(to: .transactionDetail(transaction: tx))
+                            } label: {
+                                HomeActivityRow(transaction: tx)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            if idx != min(expenseTransactions.count, 12) - 1 {
+                                PWDivider(inset: 56, opacity: 0.8)
+                            }
+                        }
+                    }
                 }
             }
         }
-        .background(AppTheme.cardBackground)
-        .cornerRadius(8)
-        .padding(.horizontal, 16)
     }
+    
+    private func formattedShortDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd MMM yyyy"
+        return formatter.string(from: date)
+    }
+    
+    // For the matched geometry effect
+    @Namespace private var namespace
     
     // MARK: - Loading State
     
@@ -396,23 +345,23 @@ struct InsightsView: View {
                 .foregroundColor(AppTheme.textColor.opacity(0.7))
                 .padding(.horizontal, 40)
             
-            Button(action: {
-                plaidManager.presentLink()
-            }) {
-                HStack {
-                    Image(systemName: "link")
-                        .font(.headline)
-                    
-                    Text("Connect Accounts")
-                        .font(.headline)
+            PWPrimaryButton(title: isPreparingPlaidLink ? "Preparing..." : "Connect accounts", isLoading: isPreparingPlaidLink, isDisabled: isPreparingPlaidLink) {
+                Task {
+                    isPreparingPlaidLink = true
+                    defer { isPreparingPlaidLink = false }
+                    do {
+                        try await container.preparePlaidLink()
+                        if container.plaidService.linkController != nil {
+                            showingPlaidLink = true
+                        } else {
+                            plaidErrorMessage = "Unable to start Plaid Link. Please try again."
+                        }
+                    } catch {
+                        plaidErrorMessage = error.localizedDescription
+                    }
                 }
-                .padding()
-                .frame(width: 250)
-                .background(AppTheme.primaryGreen)
-                .foregroundColor(.white)
-                .cornerRadius(12)
             }
-            .buttonStyle(ScaleButtonStyle())
+            .frame(width: 260)
             
             Spacer()
         }
@@ -420,76 +369,6 @@ struct InsightsView: View {
     }
     
     // MARK: - Tab Content
-    // Category Pie Chart for Overview Tab
-    private var categoryPieChartCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Spending by Category")
-                .font(.headline)
-                .foregroundColor(AppTheme.textColor)
-            
-            if categoryBreakdown.isEmpty {
-                Text("No category data for this period")
-                    .font(.subheadline)
-                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    .frame(height: 200)
-                    .frame(maxWidth: .infinity)
-            } else {
-                // Convert category breakdown data to the format needed for PieChartView
-                let chartData = categoryBreakdown.map { (name, amount) in
-                    return (name, amount)
-                }
-                
-                // Use the Swift Charts-based PieChartView
-                PieChartView(data: chartData)
-                    .frame(height: 250)
-                    .padding(.vertical, 8)
-                
-                // Add category legend below the chart
-                ScrollView {
-                    VStack(spacing: 12) {
-                        ForEach(chartData.prefix(5), id: \.0) { category, amount in
-                            Button(action: {
-                                // Show transactions for this category
-                                selectedCategoryForDetail = CategoryDetailInfo(
-                                    name: category,
-                                    isIncome: false
-                                )
-                            }) {
-                                HStack(spacing: 10) {
-                                    Circle()
-                                        .fill(categoryColor(for: category))
-                                        .frame(width: 12, height: 12)
-                                    
-                                    Text(category)
-                                        .font(.caption)
-                                        .foregroundColor(AppTheme.textColor)
-                                    
-                                    Spacer()
-                                    
-                                    Text("$\(amount, specifier: "%.0f")")
-                                        .font(.caption)
-                                        .foregroundColor(AppTheme.textColor)
-                                    
-                                    Text("(\(Int(amount / totalSpending * 100))%)")
-                                        .font(.caption)
-                                        .foregroundColor(AppTheme.textColor.opacity(0.6))
-                                }
-                                .padding(.vertical, 4)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
-                }
-                .frame(maxHeight: 200)
-            }
-        }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
-    }
     
     // Overview tab content
     private var overviewTabContent: some View {
@@ -498,16 +377,12 @@ struct InsightsView: View {
             financialSnapshotCard
                 .padding(.horizontal)
             
-            // Category breakdown pie chart (moved from categories tab)
-            categoryPieChartCard
-                .padding(.horizontal)
-            
             // Top spending categories
             topSpendingCategoriesCard
                 .padding(.horizontal)
             
-            // Income Sources Breakdown
-            topIncomeSourcesCard
+            // Top spending vendors card (replacing Savings Insights)
+            topVendorsCard
                 .padding(.horizontal)
         }
     }
@@ -519,8 +394,8 @@ struct InsightsView: View {
             spendingSummaryCard
                 .padding(.horizontal)
             
-            // Top vendors
-            topVendorsCard
+            // Category breakdown card - now with actual pie chart
+            categoryBreakdownCard
                 .padding(.horizontal)
             
             // Recent transactions list
@@ -536,16 +411,8 @@ struct InsightsView: View {
             incomeSummaryCard
                 .padding(.horizontal)
             
-            // Income Over Time Card (NEW)
-            incomeOverTimeCard
-                .padding(.horizontal)
-            
             // Income distribution - showing actual Plaid data
             enhancedIncomeDistributionCard
-                .padding(.horizontal)
-            
-            // Income transactions
-            incomeTransactionsCard
                 .padding(.horizontal)
         }
     }
@@ -553,58 +420,17 @@ struct InsightsView: View {
     // Categories tab content
     private var categoriesTabContent: some View {
         VStack(spacing: 16) {
-            // Toggle between expense and income categories
-            Picker("Category Type", selection: $showIncomeCategories) {
-                Text("Expenses").tag(false)
-                Text("Income").tag(true)
-            }
-            .pickerStyle(SegmentedPickerStyle())
-            .padding(.horizontal)
-            
-            if showIncomeCategories {
-                // Show income categories
-                if incomeCategoryBreakdown.isEmpty {
-                    Text("No income categories found for \(timeframeTitle.lowercased())")
-                        .font(.headline)
-                        .foregroundColor(AppTheme.textColor.opacity(0.7))
-                        .padding()
-                } else {
-                    ForEach(incomeCategoryBreakdown, id: \.0) { category, amount in
-                        Button(action: {
-                            // Show transactions for this income category
-                            selectedCategoryForDetail = CategoryDetailInfo(
-                                name: category,
-                                isIncome: true
-                            )
-                        }) {
-                            categoryCard(name: category, amount: amount, isIncome: true)
-                                .padding(.horizontal)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
+            if !categoryBreakdown.isEmpty {
+                // Show categories
+                ForEach(categoryBreakdown, id: \.0) { category, amount in
+                    categoryCard(name: category, amount: amount)
+                        .padding(.horizontal)
                 }
             } else {
-                // Show expense categories
-                if categoryBreakdown.isEmpty {
-                    Text("No expense categories found for \(timeframeTitle.lowercased())")
-                        .font(.headline)
-                        .foregroundColor(AppTheme.textColor.opacity(0.7))
-                        .padding()
-                } else {
-                    ForEach(categoryBreakdown, id: \.0) { category, amount in
-                        Button(action: {
-                            // Show transactions for this expense category
-                            selectedCategoryForDetail = CategoryDetailInfo(
-                                name: category,
-                                isIncome: false
-                            )
-                        }) {
-                            categoryCard(name: category, amount: amount, isIncome: false)
-                                .padding(.horizontal)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                }
+                Text("No categories found for \(timeframeTitle.lowercased())")
+                    .font(.headline)
+                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                    .padding()
             }
         }
     }
@@ -613,7 +439,8 @@ struct InsightsView: View {
     
     // Financial snapshot card
     private var financialSnapshotCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
             Text("Financial Summary - \(timeframeTitle)")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
@@ -625,15 +452,14 @@ struct InsightsView: View {
                         .font(.subheadline)
                         .foregroundColor(AppTheme.textColor.opacity(0.7))
                     
-                    Text("$\(totalIncome, specifier: "%.0f")")
+                    Text("\(CurrencyFormatter.format(totalIncome))")
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(AppTheme.primaryGreen)
                 }
                 .frame(maxWidth: .infinity)
                 
-                Divider()
-                    .background(AppTheme.cardStroke)
+                PWDivider(opacity: 0.8)
                 
                 // Expenses
                 VStack {
@@ -641,15 +467,14 @@ struct InsightsView: View {
                         .font(.subheadline)
                         .foregroundColor(AppTheme.textColor.opacity(0.7))
                     
-                    Text("$\(totalSpending, specifier: "%.0f")")
+                    Text("\(CurrencyFormatter.format(totalSpending))")
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(AppTheme.expenseColor)
                 }
                 .frame(maxWidth: .infinity)
                 
-                Divider()
-                    .background(AppTheme.cardStroke)
+                PWDivider(opacity: 0.8)
                 
                 // Net
                 VStack {
@@ -657,26 +482,22 @@ struct InsightsView: View {
                         .font(.subheadline)
                         .foregroundColor(AppTheme.textColor.opacity(0.7))
                     
-                    Text("$\(netCashflow, specifier: "%.0f")")
+                    Text("\(CurrencyFormatter.format(netCashflow))")
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(netCashflow >= 0 ? AppTheme.primaryGreen : AppTheme.expenseColor)
                  }
                 .frame(maxWidth: .infinity)
             }
-            .padding()
-            .background(AppTheme.cardBackground)
-            .cornerRadius(16)
+            .padding(12)
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
+        }
     }
     
-
     // Top spending categories card
     private var topSpendingCategoriesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
             Text("Top Spending Categories")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
@@ -719,7 +540,7 @@ struct InsightsView: View {
                         Spacer()
                         
                         VStack(alignment: .trailing, spacing: 4) {
-                            Text("$\(amount, specifier: "%.0f")")
+                            Text("\(CurrencyFormatter.format(amount))")
                                 .font(.headline)
                                 .foregroundColor(AppTheme.textColor)
                             
@@ -729,8 +550,7 @@ struct InsightsView: View {
                         }
                     }
                     .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+                    .pwGlassSurface(cornerRadius: 12)
                 }
             } else {
                 Text("No spending data available")
@@ -738,112 +558,16 @@ struct InsightsView: View {
                     .foregroundColor(AppTheme.textColor.opacity(0.7))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+                    .pwGlassSurface(cornerRadius: 12)
             }
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
-    }
-    
-    // NEW: Top Income Sources Card
-    private var topIncomeSourcesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Income Sources")
-                .font(.headline)
-                .foregroundColor(AppTheme.textColor)
-            
-            if !incomeSources.isEmpty {
-                ForEach(incomeSources.prefix(3), id: \.0) { source, amount in
-                    Button(action: {
-                        // Show detail view for this income source
-                        showIncomeSourceDetail = source
-                    }) {
-                        HStack(alignment: .center, spacing: 12) {
-                            // Source icon
-                            ZStack {
-                                Circle()
-                                    .fill(sourceColor(for: source).opacity(0.2))
-                                    .frame(width: 40, height: 40)
-                                
-                                Image(systemName: sourceIcon(for: source))
-                                    .font(.system(size: 18))
-                                    .foregroundColor(sourceColor(for: source))
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(source)
-                                    .font(.subheadline)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                // Progress bar
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 5)
-                                        .fill(AppTheme.cardBackground)
-                                        .frame(height: 6)
-                                    
-                                    RoundedRectangle(cornerRadius: 5)
-                                        .fill(sourceColor(for: source))
-                                        .frame(width: totalIncome > 0
-                                               ? CGFloat(amount / totalIncome) * 150
-                                               : 0,
-                                               height: 6)
-                                }
-                                .frame(width: 150)
-                            }
-                            
-                            Spacer()
-                            
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text("$\(amount, specifier: "%.0f")")
-                                    .font(.headline)
-                                    .foregroundColor(AppTheme.primaryGreen)
-                                
-                                Text("\(Int(amount / totalIncome * 100))%")
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
-                            }
-                        }
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
-                }
-                
-                // "See All" button if more than 3 sources
-                if incomeSources.count > 3 {
-                    Button(action: {
-                        selectedTab = 2 // Switch to Income tab
-                    }) {
-                        Text("See All Income Sources")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.primaryGreen)
-                            .padding(.vertical, 10)
-                            .frame(maxWidth: .infinity)
-                            .background(AppTheme.primaryGreen.opacity(0.1))
-                            .cornerRadius(12)
-                    }
-                }
-            } else {
-                Text("No income data available")
-                    .font(.subheadline)
-                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
-            }
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
     }
     
-    // Top vendors card
+    // NEW: Top Vendors Card (replacing Savings Insights)
     private var topVendorsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
             Text("Top Spending Vendors")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
@@ -886,7 +610,7 @@ struct InsightsView: View {
                         Spacer()
                         
                         VStack(alignment: .trailing, spacing: 4) {
-                            Text("$\(amount, specifier: "%.0f")")
+                            Text("\(CurrencyFormatter.format(amount))")
                                 .font(.headline)
                                 .foregroundColor(AppTheme.textColor)
                             
@@ -896,8 +620,7 @@ struct InsightsView: View {
                         }
                     }
                     .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+                    .pwGlassSurface(cornerRadius: 12)
                 }
             } else {
                 Text("No vendor data available")
@@ -905,18 +628,16 @@ struct InsightsView: View {
                     .foregroundColor(AppTheme.textColor.opacity(0.7))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+                    .pwGlassSurface(cornerRadius: 12)
             }
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
+        }
     }
     
     // Spending summary card
     private var spendingSummaryCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
             Text("Spending Summary - \(timeframeTitle)")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
@@ -927,7 +648,7 @@ struct InsightsView: View {
                         .font(.subheadline)
                         .foregroundColor(AppTheme.textColor.opacity(0.7))
                     
-                    Text("$\(totalSpending, specifier: "%.0f")")
+                    Text("\(CurrencyFormatter.format(totalSpending))")
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(AppTheme.textColor)
@@ -946,17 +667,14 @@ struct InsightsView: View {
                         .foregroundColor(AppTheme.accentBlue)
                 }
             }
-            .padding()
-            .background(AppTheme.cardBackground)
-            .cornerRadius(12)
+            .padding(12)
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
+        }
     }
     
     private var categoryBreakdownCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
             Text("Spending by Category")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
@@ -982,52 +700,41 @@ struct InsightsView: View {
                 ScrollView {
                     VStack(spacing: 12) {
                         ForEach(chartData.prefix(5), id: \.0) { category, amount in
-                            Button(action: {
-                                // Show transactions for this category
-                                selectedCategoryForDetail = CategoryDetailInfo(
-                                    name: category,
-                                    isIncome: false
-                                )
-                            }) {
-                                HStack(spacing: 10) {
-                                    Circle()
-                                        .fill(categoryColor(for: category))
-                                        .frame(width: 12, height: 12)
-                                    
-                                    Text(category)
-                                        .font(.caption)
-                                        .foregroundColor(AppTheme.textColor)
-                                    
-                                    Spacer()
-                                    
-                                    Text("$\(amount, specifier: "%.0f")")
-                                        .font(.caption)
-                                        .foregroundColor(AppTheme.textColor)
-                                    
-                                    Text("(\(Int(amount / totalSpending * 100))%)")
-                                        .font(.caption)
-                                        .foregroundColor(AppTheme.textColor.opacity(0.6))
-                                }
-                                .padding(.vertical, 4)
+                            HStack(spacing: 10) {
+                                Circle()
+                                    .fill(categoryColor(for: category))
+                                    .frame(width: 12, height: 12)
+                                
+                                Text(category)
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Spacer()
+                                
+                                Text("\(CurrencyFormatter.format(amount))")
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Text("(\(Int(amount / totalSpending * 100))%)")
+                                    .font(.caption)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .padding(.vertical, 4)
                         }
                     }
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+                    .padding(12)
+                    .pwGlassSurface(cornerRadius: 12)
                 }
                 .frame(maxHeight: 200)
             }
+            }
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
     }
     
     // Recent transactions card
     private var recentTransactionsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
             Text("Recent Transactions")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
@@ -1037,62 +744,34 @@ struct InsightsView: View {
                     .font(.subheadline)
                     .foregroundColor(AppTheme.textColor.opacity(0.7))
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+                    .padding(.vertical, 12)
             } else {
                 // Sort transactions by date, newest first
                 let sortedTransactions = expenseTransactions.sorted(by: { $0.date > $1.date })
                 
-                ForEach(sortedTransactions.prefix(5)) { transaction in
-                    Button(action: {
-                        selectedTransaction = transaction
-                    }) {
-                        HStack(spacing: 12) {
-                            // Category icon
-                            ZStack {
-                                Circle()
-                                    .fill(categoryColor(for: transaction.category).opacity(0.2))
-                                    .frame(width: 40, height: 40)
-                                
-                                Image(systemName: getCategoryIcon(for: transaction.category))
-                                    .font(.system(size: 18))
-                                    .foregroundColor(categoryColor(for: transaction.category))
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(transaction.merchantName)
-                                    .font(.subheadline)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Text(formatDate(transaction.date))
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
-                            }
-                            
-                            Spacer()
-                            
-                            Text("$\(transaction.amount, specifier: "%.2f")")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(transaction.amount >= 0 ? AppTheme.expenseColor : AppTheme.primaryGreen)
+                VStack(spacing: 0) {
+                    ForEach(Array(sortedTransactions.prefix(5).enumerated()), id: \.element.id) { idx, transaction in
+                        Button {
+                            navigationManager.navigate(to: .transactionDetail(transaction: transaction))
+                        } label: {
+                            HomeActivityRow(transaction: transaction)
                         }
-                        .padding()
-                        .background(AppTheme.cardBackground)
-                        .cornerRadius(12)
+                        .buttonStyle(.plain)
+                        
+                        if idx != min(sortedTransactions.count, 5) - 1 {
+                            PWDivider(inset: 56, opacity: 0.8)
+                        }
                     }
-                    .buttonStyle(PlainButtonStyle())
                 }
             }
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
+        }
     }
     
     // Income summary card
     private var incomeSummaryCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
             Text("Income Summary - \(timeframeTitle)")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
@@ -1103,7 +782,7 @@ struct InsightsView: View {
                         .font(.subheadline)
                         .foregroundColor(AppTheme.textColor.opacity(0.7))
                     
-                    Text("$\(totalIncome, specifier: "%.0f")")
+                    Text("\(CurrencyFormatter.format(totalIncome))")
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(AppTheme.primaryGreen)
@@ -1122,65 +801,15 @@ struct InsightsView: View {
                         .foregroundColor(AppTheme.accentBlue)
                 }
             }
-            .padding()
-            .background(AppTheme.cardBackground)
-            .cornerRadius(12)
+            .padding(12)
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
-    }
-    
-    // NEW: Income Over Time Card
-    private var incomeOverTimeCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Income Over Time")
-                .font(.headline)
-                .foregroundColor(AppTheme.textColor)
-            
-            if monthlyIncomeTrend.isEmpty {
-                Text("No income trend data available")
-                    .font(.subheadline)
-                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
-            } else {
-                VStack {
-                    Chart {
-                        ForEach(monthlyIncomeTrend, id: \.0) { item in
-                            BarMark(
-                                x: .value("Month", item.0),
-                                y: .value("Amount", item.1)
-                            )
-                            .foregroundStyle(AppTheme.primaryGreen.gradient)
-                            .cornerRadius(6)
-                        }
-                    }
-                    .frame(height: 200)
-                    .chartYAxis {
-                        AxisMarks(position: .leading) { value in
-                            if let amount = value.as(Double.self) {
-                                AxisValueLabel("$\(Int(amount))")
-                            }
-                            AxisGridLine()
-                        }
-                    }
-                }
-                .padding()
-                .background(AppTheme.cardBackground)
-                .cornerRadius(12)
-            }
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
     }
     
     // Enhanced income distribution card
     private var enhancedIncomeDistributionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        PWGlassCard {
+            VStack(alignment: .leading, spacing: 12) {
             Text("Income Sources")
                 .font(.headline)
                 .foregroundColor(AppTheme.textColor)
@@ -1189,65 +818,54 @@ struct InsightsView: View {
                 // Show actual income sources from Plaid data
                 VStack(spacing: 15) {
                     if !incomeSources.isEmpty {
-                        ForEach(incomeSources, id: \.0) { source, amount in
-                            Button(action: {
-                                // Show detail view for this income source
-                                showIncomeSourceDetail = source
-                            }) {
-                                HStack(spacing: 15) {
-                                    // Source icon
-                                    ZStack {
-                                        Circle()
-                                            .fill(sourceColor(for: source).opacity(0.2))
-                                            .frame(width: 40, height: 40)
-                                        
-                                        Image(systemName: sourceIcon(for: source))
-                                            .font(.system(size: 18))
-                                            .foregroundColor(sourceColor(for: source))
-                                    }
+                        ForEach(incomeSources.prefix(5), id: \.0) { source, amount in
+                            HStack(spacing: 15) {
+                                // Source icon
+                                ZStack {
+                                    Circle()
+                                        .fill(sourceColor(for: source).opacity(0.2))
+                                        .frame(width: 40, height: 40)
                                     
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(source)
-                                            .font(.subheadline)
-                                            .foregroundColor(AppTheme.textColor)
-                                        
-                                        // Progress bar
-                                        ZStack(alignment: .leading) {
-                                            RoundedRectangle(cornerRadius: 5)
-                                                .fill(AppTheme.cardBackground)
-                                                .frame(height: 6)
-                                            
-                                            RoundedRectangle(cornerRadius: 5)
-                                                .fill(sourceColor(for: source))
-                                                .frame(width: totalIncome > 0
-                                                       ? CGFloat(amount / totalIncome) * 150
-                                                       : 0,
-                                                       height: 6)
-                                        }
-                                        .frame(width: 150)
-                                    }
+                                    Image(systemName: sourceIcon(for: source))
+                                        .font(.system(size: 18))
+                                        .foregroundColor(sourceColor(for: source))
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(source)
+                                        .font(.subheadline)
+                                        .foregroundColor(AppTheme.textColor)
                                     
-                                    Spacer()
-                                    
-                                    VStack(alignment: .trailing, spacing: 4) {
-                                        Text("$\(amount, specifier: "%.0f")")
-                                            .font(.headline)
-                                            .foregroundColor(AppTheme.textColor)
+                                    // Progress bar
+                                    ZStack(alignment: .leading) {
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(AppTheme.cardBackground)
+                                            .frame(height: 6)
                                         
-                                        Text("\(Int(amount / totalIncome * 100))%")
-                                            .font(.caption)
-                                            .foregroundColor(AppTheme.textColor.opacity(0.6))
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(sourceColor(for: source))
+                                            .frame(width: totalIncome > 0
+                                                   ? CGFloat(amount / totalIncome) * 150
+                                                   : 0,
+                                                   height: 6)
                                     }
+                                    .frame(width: 150)
+                                }
+                                
+                                Spacer()
+                                
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text("\(CurrencyFormatter.format(amount))")
+                                        .font(.headline)
+                                        .foregroundColor(AppTheme.textColor)
+                                    
+                                    Text("\(Int(amount / totalIncome * 100))%")
+                                        .font(.caption)
+                                        .foregroundColor(AppTheme.textColor.opacity(0.6))
                                 }
                             }
-                            .buttonStyle(PlainButtonStyle())
                             .padding()
-                            .background(AppTheme.cardBackground)
-                            .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(AppTheme.cardStroke, lineWidth: 1)
-                            )
+                            .pwGlassSurface(cornerRadius: 12)
                         }
                     } else {
                         // Fallback for when we can't determine sources
@@ -1274,14 +892,13 @@ struct InsightsView: View {
                             
                             Spacer()
                             
-                            Text("$\(totalIncome, specifier: "%.0f")")
+                            Text("\(CurrencyFormatter.format(totalIncome))")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(AppTheme.primaryGreen)
                         }
                         .padding()
-                        .background(AppTheme.cardBackground)
-                        .cornerRadius(12)
+                        .pwGlassSurface(cornerRadius: 12)
                     }
                 }
             } else {
@@ -1290,92 +907,24 @@ struct InsightsView: View {
                     .foregroundColor(AppTheme.textColor.opacity(0.7))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
+                    .pwGlassSurface(cornerRadius: 12)
             }
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
-    }
-    
-    // NEW: Income transactions card
-    private var incomeTransactionsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recent Income Transactions")
-                .font(.headline)
-                .foregroundColor(AppTheme.textColor)
-            
-            if incomeTransactions.isEmpty {
-                Text("No income transactions")
-                    .font(.subheadline)
-                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
-            } else {
-                // Sort transactions by date, newest first
-                let sortedTransactions = incomeTransactions.sorted(by: { $0.date > $1.date })
-                
-                ForEach(sortedTransactions.prefix(5)) { transaction in
-                    Button(action: {
-                        selectedTransaction = transaction
-                    }) {
-                        HStack(spacing: 12) {
-                            // Icon
-                            ZStack {
-                                Circle()
-                                    .fill(AppTheme.primaryGreen.opacity(0.2))
-                                    .frame(width: 40, height: 40)
-                                
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(AppTheme.primaryGreen)
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(transaction.merchantName.isEmpty ? "Income Deposit" : transaction.merchantName)
-                                    .font(.subheadline)
-                                    .foregroundColor(AppTheme.textColor)
-                                
-                                Text(formatDate(transaction.date))
-                                    .font(.caption)
-                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
-                            }
-                            
-                            Spacer()
-                            
-                            Text("$\(abs(transaction.amount), specifier: "%.2f")")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(AppTheme.primaryGreen)
-                        }
-                        .padding()
-                        .background(AppTheme.cardBackground)
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-            }
         }
-        .padding()
-        .background(AppTheme.cardBackground.opacity(0.3))
-        .cornerRadius(20)
     }
     
     // Category card for the Categories tab
-    private func categoryCard(name: String, amount: Double, isIncome: Bool) -> some View {
+    private func categoryCard(name: String, amount: Double) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 ZStack {
                     Circle()
-                        .fill((isIncome ? AppTheme.primaryGreen : categoryColor(for: name)).opacity(0.2))
+                        .fill(categoryColor(for: name).opacity(0.2))
                         .frame(width: 40, height: 40)
                     
-                    Image(systemName: isIncome ? "arrow.down.circle.fill" : getCategoryIcon(for: name))
+                    Image(systemName: getCategoryIcon(for: name))
                         .font(.system(size: 18))
-                        .foregroundColor(isIncome ? AppTheme.primaryGreen : categoryColor(for: name))
+                        .foregroundColor(categoryColor(for: name))
                 }
                 
                 Text(name)
@@ -1384,14 +933,14 @@ struct InsightsView: View {
                 
                 Spacer()
                 
-                Text("$\(amount, specifier: "%.0f")")
+                Text("\(CurrencyFormatter.format(amount))")
                     .font(.headline)
-                    .foregroundColor(isIncome ? AppTheme.primaryGreen : AppTheme.textColor)
+                    .foregroundColor(AppTheme.textColor)
             }
             
-            // Percentage of total
+            // Percentage of total spending
             HStack {
-                Text("\(Int(amount / (isIncome ? totalIncome : totalSpending) * 100))% of total")
+                Text("\(Int(amount / totalSpending * 100))% of total")
                     .font(.caption)
                     .foregroundColor(AppTheme.textColor.opacity(0.7))
                 
@@ -1399,289 +948,24 @@ struct InsightsView: View {
             }
             
             // Progress bar
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(AppTheme.cardBackground)
-                    .frame(height: 8)
-                
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isIncome ? AppTheme.primaryGreen : categoryColor(for: name))
-                    .frame(width: (isIncome ? totalIncome : totalSpending) > 0
-                           ? CGFloat(amount / (isIncome ? totalIncome : totalSpending)) * (UIScreen.main.bounds.width - 64)
-                           : 0,
-                           height: 8)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(AppTheme.cardBackground)
+                        .frame(height: 8)
+                    
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(categoryColor(for: name))
+                        .frame(width: totalSpending > 0
+                               ? CGFloat(amount / totalSpending) * geometry.size.width
+                               : 0,
+                               height: 8)
+                }
             }
+            .frame(height: 8)
         }
         .padding()
-        .background(AppTheme.cardBackground)
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(AppTheme.cardStroke, lineWidth: 1)
-        )
-    }
-    
-    // Income source detail view
-    private func incomeSourceDetailView(for source: String) -> some View {
-        let transactions = transactionsForIncomeSource(source)
-        let totalAmount = transactions.reduce(0.0) { $0 + abs($1.amount) }
-        
-        return NavigationView {
-            ZStack {
-                AppTheme.backgroundGradient
-                    .edgesIgnoringSafeArea(.all)
-                
-                VStack(spacing: 16) {
-                    // Header
-                    VStack(spacing: 4) {
-                        Text(source)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Text("Income Source")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    }
-                    .padding(.top)
-                    
-                    // Total income from this source
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Total Income")
-                                .font(.subheadline)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            
-                            Text("$\(totalAmount, specifier: "%.2f")")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(AppTheme.primaryGreen)
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text("Percentage")
-                                .font(.subheadline)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            
-                            Text("\(Int(totalAmount / totalIncome * 100))%")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(AppTheme.accentBlue)
-                        }
-                    }
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(16)
-                    .padding(.horizontal)
-                    
-                    // All transactions from this source
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Income Transactions")
-                                .font(.headline)
-                                .foregroundColor(AppTheme.textColor)
-                                .padding(.horizontal)
-                            
-                            ForEach(transactions.sorted(by: { $0.date > $1.date })) { transaction in
-                                Button(action: {
-                                    selectedTransaction = transaction
-                                    showIncomeSourceDetail = nil
-                                }) {
-                                    HStack(spacing: 12) {
-                                        // Icon
-                                        ZStack {
-                                            Circle()
-                                                .fill(AppTheme.primaryGreen.opacity(0.2))
-                                                .frame(width: 40, height: 40)
-                                            
-                                            Image(systemName: "arrow.down.circle.fill")
-                                                .font(.system(size: 18))
-                                                .foregroundColor(AppTheme.primaryGreen)
-                                        }
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(transaction.name)
-                                                .font(.subheadline)
-                                                .foregroundColor(AppTheme.textColor)
-                                            
-                                            Text(formatDate(transaction.date))
-                                                .font(.caption)
-                                                .foregroundColor(AppTheme.textColor.opacity(0.6))
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        Text("$\(abs(transaction.amount), specifier: "%.2f")")
-                                            .font(.subheadline)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(AppTheme.primaryGreen)
-                                    }
-                                    .padding()
-                                    .background(AppTheme.cardBackground)
-                                    .cornerRadius(12)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .padding(.horizontal)
-                            }
-                        }
-                        .padding(.bottom, 40)
-                    }
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Close") {
-                        showIncomeSourceDetail = nil
-                    }
-                    .foregroundColor(AppTheme.primaryGreen)
-                }
-            }
-        }
-    }
-    
-    // Category detail view
-    private func categoryDetailView(for category: String, isIncome: Bool) -> some View {
-        let transactions = transactionsForCategory(category, isIncome: isIncome)
-        let totalAmount = transactions.reduce(0.0) { $0 + (isIncome ? abs($1.amount) : $1.amount) }
-        let totalCompare = isIncome ? totalIncome : totalSpending
-        
-        return NavigationView {
-            ZStack {
-                AppTheme.backgroundGradient
-                    .edgesIgnoringSafeArea(.all)
-                
-                VStack(spacing: 16) {
-                    // Header
-                    VStack(spacing: 4) {
-                        Text(category)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(AppTheme.textColor)
-                        
-                        Text(isIncome ? "Income Category" : "Expense Category")
-                            .font(.subheadline)
-                            .foregroundColor(AppTheme.textColor.opacity(0.7))
-                    }
-                    .padding(.top)
-                    
-                    // Category icon
-                    ZStack {
-                        Circle()
-                            .fill((isIncome ? AppTheme.primaryGreen : categoryColor(for: category)).opacity(0.2))
-                            .frame(width: 60, height: 60)
-                        
-                        Image(systemName: isIncome ? "arrow.down.circle.fill" : getCategoryIcon(for: category))
-                            .font(.system(size: 30))
-                            .foregroundColor(isIncome ? AppTheme.primaryGreen : categoryColor(for: category))
-                    }
-                    .padding(.bottom, 8)
-                    
-                    // Total for this category
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(isIncome ? "Total Income" : "Total Spent")
-                                .font(.subheadline)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            
-                            Text("$\(totalAmount, specifier: "%.2f")")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(isIncome ? AppTheme.primaryGreen : AppTheme.expenseColor)
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text("Percentage")
-                                .font(.subheadline)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
-                            
-                            Text("\(Int(totalAmount / totalCompare * 100))%")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(AppTheme.accentBlue)
-                        }
-                    }
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(16)
-                    .padding(.horizontal)
-                    
-                    // All transactions in this category
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("\(category) Transactions")
-                                .font(.headline)
-                                .foregroundColor(AppTheme.textColor)
-                                .padding(.horizontal)
-                            
-                            if transactions.isEmpty {
-                                Text("No transactions found in this category")
-                                    .font(.subheadline)
-                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    .padding()
-                            } else {
-                                ForEach(transactions.sorted(by: { $0.date > $1.date })) { transaction in
-                                    Button(action: {
-                                        selectedTransaction = transaction
-                                        selectedCategoryForDetail = nil
-                                    }) {
-                                        HStack(spacing: 12) {
-                                            // Icon
-                                            ZStack {
-                                                Circle()
-                                                    .fill((isIncome ? AppTheme.primaryGreen : categoryColor(for: category)).opacity(0.2))
-                                                    .frame(width: 40, height: 40)
-                                                
-                                                Image(systemName: isIncome ? "arrow.down.circle.fill" : getCategoryIcon(for: category))
-                                                    .font(.system(size: 18))
-                                                    .foregroundColor(isIncome ? AppTheme.primaryGreen : categoryColor(for: category))
-                                            }
-                                            
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(transaction.merchantName.isEmpty ? transaction.name : transaction.merchantName)
-                                                    .font(.subheadline)
-                                                    .foregroundColor(AppTheme.textColor)
-                                                
-                                                Text(formatDate(transaction.date))
-                                                    .font(.caption)
-                                                    .foregroundColor(AppTheme.textColor.opacity(0.6))
-                                            }
-                                            
-                                            Spacer()
-                                            
-                                            Text("$\(isIncome ? abs(transaction.amount) : transaction.amount, specifier: "%.2f")")
-                                                .font(.subheadline)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(isIncome ? AppTheme.primaryGreen : AppTheme.expenseColor)
-                                        }
-                                        .padding()
-                                        .background(AppTheme.cardBackground)
-                                        .cornerRadius(12)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                    .padding(.horizontal)
-                                }
-                            }
-                        }
-                        .padding(.bottom, 40)
-                    }
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Close") {
-                        selectedCategoryForDetail = nil
-                    }
-                    .foregroundColor(AppTheme.primaryGreen)
-                }
-            }
-        }
+        .pwGlassSurface(cornerRadius: 16)
     }
     
     // MARK: - Helper Methods
@@ -1794,7 +1078,7 @@ struct InsightsView: View {
         )
     }
     
-    // Vendor color generator
+    // NEW: Vendor color generator
     private func vendorColor(for vendor: String) -> Color {
         let vendorColors: [Color] = [
             AppTheme.primaryGreen,
@@ -1814,25 +1098,4 @@ struct InsightsView: View {
         
         return vendorColors[index]
     }
-}
-
-// Support for income source detail sheet
-struct IncomeSourceDetail: Identifiable {
-    var id: String { name }
-    let name: String
-}
-
-// Support for category detail sheet
-struct CategoryDetailInfo: Identifiable {
-    var id: String { name + (isIncome ? "-income" : "-expense") }
-    let name: String
-    let isIncome: Bool
-}
-
-// Data structure for pie chart
-struct PieChartDataPoint: Identifiable {
-    var id = UUID()
-    let category: String
-    let amount: Double
-    let color: Color
 }

@@ -6,22 +6,23 @@
 //
 
 import SwiftUI
-import FirebaseAuth
 
 struct DeleteAccountView: View {
+    // MARK: - Dependencies
+    var viewModel: SettingsViewModel
+    
     // MARK: - Environment
-    @Environment(\.presentationMode) private var presentationMode
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
     @State private var confirmText   = ""
-    @State private var isLoading     = false
-    @State private var errorMessage  = ""
+    @State private var password      = ""
     @State private var showSuccess   = false
 
     // MARK: - View
     var body: some View {
         ZStack {
-            AppTheme.backgroundGradient.ignoresSafeArea()
+            Color(AppTheme.backgroundPrimary).ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 24) {
@@ -39,14 +40,18 @@ struct DeleteAccountView: View {
                     warningBox
 
                     confirmationField
+                    
+                    passwordField
 
-                    if !errorMessage.isEmpty { errorBanner }
+                    if let error = viewModel.error, !error.localizedDescription.isEmpty {
+                        errorBanner(error: error)
+                    }
 
                     deleteButton
                         .padding(.top, 10)
 
                     Button("Cancel") {
-                        presentationMode.wrappedValue.dismiss()
+                        dismiss()
                     }
                     .font(.headline)
                     .foregroundColor(AppTheme.textColor)
@@ -57,12 +62,12 @@ struct DeleteAccountView: View {
         }
         .navigationTitle("Delete Account")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(isLoading)
+        .navigationBarBackButtonHidden(viewModel.isLoading)
         .alert("Account Deleted",
                isPresented: $showSuccess,
                actions: {
                    Button("OK", role: .cancel) {
-                       presentationMode.wrappedValue.dismiss()
+                       dismiss()
                    }
                },
                message: {
@@ -116,13 +121,31 @@ struct DeleteAccountView: View {
                 )
         }
     }
+    
+    private var passwordField: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Password (required for email/password accounts)")
+                .font(.headline)
+                .foregroundColor(AppTheme.textColor)
+            
+            SecureField("", text: $password)
+                .foregroundColor(AppTheme.textColor)
+                .padding()
+                .background(AppTheme.cardBackground)
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(AppTheme.cardStroke, lineWidth: 1)
+                )
+        }
+    }
 
-    private var errorBanner: some View {
+    private func errorBanner(error: Error) -> some View {
         HStack {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundColor(AppTheme.expenseColor)
 
-            Text(errorMessage)
+            Text(error.localizedDescription)
                 .font(.caption)
                 .foregroundColor(AppTheme.expenseColor)
                 .multilineTextAlignment(.leading)
@@ -136,7 +159,7 @@ struct DeleteAccountView: View {
         Button {
             deleteAccount()
         } label: {
-            if isLoading {
+            if viewModel.isLoading {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
             } else {
@@ -150,7 +173,7 @@ struct DeleteAccountView: View {
         .background(isDeleteButtonEnabled ? AppTheme.expenseColor
                                           : AppTheme.expenseColor.opacity(0.5))
         .cornerRadius(12)
-        .disabled(!isDeleteButtonEnabled || isLoading)
+        .disabled(!isDeleteButtonEnabled || viewModel.isLoading)
     }
 
 
@@ -171,39 +194,15 @@ struct DeleteAccountView: View {
 
     private func deleteAccount() {
         guard isDeleteButtonEnabled else { return }
-        isLoading  = true
-        errorMessage = ""
-
-        AccountDeletionManager.shared.deleteAccount { result in
-            DispatchQueue.main.async {
-                isLoading = false
-                switch result {
-                case .success:
-                    showSuccess = true
-                case .failure(let error):
-                    handleError(error)
-                }
+        
+        viewModel.error = nil
+        
+        Task {
+            await viewModel.deleteAccount(password: password.isEmpty ? nil : password)
+            
+            if viewModel.error == nil {
+                showSuccess = true
             }
         }
-    }
-
-    private func handleError(_ error: Error) {
-        let ns = error as NSError
-        if ns.domain == AuthErrorDomain,
-           ns.code == AuthErrorCode.requiresRecentLogin.rawValue {
-            errorMessage = "For security reasons, please sign out and sign back in before deleting your account."
-        } else {
-            errorMessage = "Error: \(error.localizedDescription)"
-        }
-    }
-}
-
-// MARK: - Preview
-struct DeleteAccountView_Previews: PreviewProvider {
-    static var previews: some View {
-        NavigationView {
-            DeleteAccountView()
-        }
-        .preferredColorScheme(.dark)
     }
 }

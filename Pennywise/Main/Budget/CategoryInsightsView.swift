@@ -10,52 +10,58 @@ import SwiftUI
 
 struct CategoryInsightsView: View {
     let category: BudgetCategory
-    let insights: [String]
-    let spent: Double
-    let transactions: [PlaidTransaction]
-    @Binding var presentationMode: Bool
+    var insights: [String] = []
+    var spent: Double = 0
+    var transactions: [PlaidTransaction] = []
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigationManager: NavigationManager
     
     @State private var selectedTab = 0
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                AppTheme.backgroundGradient
-                    .ignoresSafeArea()
+        ZStack {
+                AppTheme.enhancedBackgroundGradient
                 
                 VStack(spacing: 20) {
                     // Header
-                    HStack(spacing: 15) {
-                        ZStack {
-                            Circle()
-                                .fill(category.color.opacity(0.2))
-                                .frame(width: 50, height: 50)
+                    PWGlassCard {
+                        HStack(spacing: 15) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(hex: category.colorHex).opacity(0.2))
+                                    .frame(width: 50, height: 50)
+                                
+                                Image(systemName: category.icon)
+                                    .font(.system(size: 24))
+                                    .foregroundColor(Color(hex: category.colorHex))
+                            }
                             
-                            Image(systemName: category.icon)
-                                .font(.system(size: 24))
-                                .foregroundColor(category.color)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(category.name)
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(AppTheme.textColor)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(category.name)
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(AppTheme.textColor)
+                                
+                                Text("\(CurrencyFormatter.format(spent)) spent of \(CurrencyFormatter.format(category.amount))")
+                                    .font(.subheadline)
+                                    .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            }
                             
-                            Text("$\(Int(spent)) spent of $\(Int(category.amount))")
-                                .font(.subheadline)
-                                .foregroundColor(AppTheme.textColor.opacity(0.7))
+                            Spacer()
+                            
+                            Button(action: {
+                                navigationManager.navigate(to: .categoryMapping(budgetCategory: category.name))
+                            }) {
+                                Image(systemName: "slider.horizontal.3")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(AppTheme.accentBlue)
+                                    .padding(10)
+                                    .background(AppTheme.accentBlue.opacity(0.12))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        
-                        Spacer()
                     }
-                    .padding()
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(16)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(AppTheme.cardStroke, lineWidth: 1)
-                    )
                     .padding(.horizontal)
                     
                     // Tab selector
@@ -83,7 +89,7 @@ struct CategoryInsightsView: View {
                     
                     // Close button
                     Button(action: {
-                        presentationMode = false
+                        dismiss()
                     }) {
                         Text("Close")
                             .font(.headline)
@@ -99,9 +105,7 @@ struct CategoryInsightsView: View {
                 }
                 .padding(.top, 8)
             }
-            .navigationBarHidden(true)
         }
-    }
     
     // MARK: - Tab Content Views
     
@@ -202,7 +206,7 @@ struct CategoryInsightsView: View {
                 // List item
                 HStack(alignment: .top, spacing: 10) {
                     Circle()
-                        .fill(category.color)
+                        .fill(Color(hex: category.colorHex))
                         .frame(width: 8, height: 8)
                         .padding(.top, 6)
                     
@@ -216,12 +220,12 @@ struct CategoryInsightsView: View {
                     // Icon
                     ZStack {
                         Circle()
-                            .fill(category.color.opacity(0.2))
+                            .fill(Color(hex: category.colorHex).opacity(0.2))
                             .frame(width: 36, height: 36)
                         
                         Image(systemName: insightIcon(for: index))
                             .font(.system(size: 16))
-                            .foregroundColor(category.color)
+                            .foregroundColor(Color(hex: category.colorHex))
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
@@ -233,12 +237,7 @@ struct CategoryInsightsView: View {
             }
         }
         .padding()
-        .background(AppTheme.cardBackground)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppTheme.cardStroke, lineWidth: 1)
-        )
+        .pwGlassSurface(cornerRadius: 12)
     }
     
     // Transaction row
@@ -274,18 +273,13 @@ struct CategoryInsightsView: View {
             Spacer()
             
             // Amount
-            Text("$\(String(format: "%.2f", transaction.amount))")
+            Text("\(CurrencyFormatter.format(transaction.amount))")
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(transaction.amount > 0 ? AppTheme.expenseColor : AppTheme.primaryGreen)
         }
         .padding()
-        .background(AppTheme.cardBackground)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppTheme.cardStroke, lineWidth: 1)
-        )
+        .pwGlassSurface(cornerRadius: 12)
     }
     
     // MARK: - Helper Functions
@@ -318,35 +312,5 @@ struct CategoryInsightsView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM"
         return formatter.string(from: date)
-    }
-}
-
-// MARK: - Form Field Helper
-struct FormField<Content: View>: View {
-    let title: String
-    let isRequired: Bool
-    let content: Content
-    
-    init(title: String, isRequired: Bool = false, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.isRequired = isRequired
-        self.content = content()
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundColor(AppTheme.textColor.opacity(0.8))
-                
-                if isRequired {
-                    Text("*")
-                        .foregroundColor(Color(hex: "#FF5757"))
-                }
-            }
-            
-            content
-        }
     }
 }

@@ -9,13 +9,15 @@ import SwiftUI
 
 struct PlaidOnboardingView: View {
     @Binding var isPresented: Bool
-    @EnvironmentObject var plaidManager: PlaidManager
+    private let container = DependencyContainer.shared
     @State private var isLoading = false
+    @State private var showingLink = false
+    @State private var errorMessage: String? = nil
+    @AppStorage("hasSkippedPlaidLink") private var hasSkippedPlaidLink = false
     
     var body: some View {
         ZStack {
-            // Background gradient
-            AppTheme.backgroundGradient
+            Color(AppTheme.backgroundPrimary)
                 .edgesIgnoringSafeArea(.all)
             
             VStack(spacing: 30) {
@@ -60,8 +62,7 @@ struct PlaidOnboardingView: View {
                         // Allow users to skip linking accounts
                         withAnimation {
                             isPresented = false
-                            // Set hasLinkedPlaidAccount to true to bypass this screen
-                            UserDefaults.standard.set(true, forKey: "hasLinkedPlaidAccount")
+                            hasSkippedPlaidLink = true
                         }
                     }) {
                         Text("Skip for now")
@@ -72,11 +73,63 @@ struct PlaidOnboardingView: View {
                     .padding(.bottom, 20)
                     
                     // Connect button
-                    PlaidLinkView()
-                        .padding(.bottom, 40)
+                    Button(action: {
+                        Task {
+                            isLoading = true
+                            do {
+                                try await container.preparePlaidLink()
+                                if container.plaidService.linkController != nil {
+                                    showingLink = true
+                                } else {
+                                    errorMessage = "Unable to start Plaid Link. Please try again."
+                                }
+                            } catch {
+                                errorMessage = error.localizedDescription
+                            }
+                            isLoading = false
+                        }
+                    }) {
+                        Text("Connect Account")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(AppTheme.primaryGreen)
+                            .cornerRadius(12)
+                            .shadow(color: AppTheme.primaryGreen.opacity(0.3), radius: 5, x: 0, y: 5)
+                    }
+                    .disabled(isLoading)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 40)
                 }
             }
             .padding()
+        }
+        .fullScreenCover(isPresented: $showingLink) {
+            if let handler = container.plaidService.linkController {
+                PlaidLinkView(handler: handler) {
+                    showingLink = false
+                }
+                .onAppear {
+                    container.plaidService.onSuccess = {
+                        showingLink = false
+                        hasSkippedPlaidLink = false
+                        isPresented = false
+                    }
+                    container.plaidService.onLinkError = { error in
+                        showingLink = false
+                        errorMessage = error.localizedDescription
+                    }
+                    container.plaidService.onExit = {
+                        showingLink = false
+                    }
+                }
+            }
+        }
+        .alert("Plaid Link Error", isPresented: Binding(get: { errorMessage != nil }, set: { _ in errorMessage = nil })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 }

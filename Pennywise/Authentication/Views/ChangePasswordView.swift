@@ -5,19 +5,15 @@
 //  Created by Arnav Varyani on 4/8/25.
 //
 import SwiftUI
-import Firebase
-import FirebaseAuth
 
 struct ChangePasswordView: View {
-    @Environment(\.presentationMode) var presentationMode
-    @StateObject private var authService = AuthenticationService.shared
+    @Environment(\.dismiss) private var dismiss
+    var viewModel: SettingsViewModel
     
     @State private var currentPassword = ""
     @State private var newPassword = ""
     @State private var confirmPassword = ""
-    @State private var errorMessage = ""
     @State private var successMessage = ""
-    @State private var isLoading = false
     @State private var showAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
@@ -38,8 +34,7 @@ struct ChangePasswordView: View {
     
     var body: some View {
         ZStack {
-            // Background gradient
-            AppTheme.backgroundGradient
+            Color(AppTheme.backgroundPrimary)
                 .edgesIgnoringSafeArea(.all)
             
             // Main content in a ScrollView with keyboard awareness
@@ -50,8 +45,8 @@ struct ChangePasswordView: View {
                         
                         passwordFormSection
                         
-                        if !errorMessage.isEmpty {
-                            errorSection
+                        if let error = viewModel.error, !error.localizedDescription.isEmpty {
+                            errorSection(error: error)
                         }
                         
                         if !successMessage.isEmpty {
@@ -68,7 +63,7 @@ struct ChangePasswordView: View {
                         // Back button for when completed successfully
                         if !successMessage.isEmpty {
                             Button(action: {
-                                presentationMode.wrappedValue.dismiss()
+                                dismiss()
                             }) {
                                 Text("Back to Settings")
                                     .font(.headline)
@@ -87,8 +82,8 @@ struct ChangePasswordView: View {
                     }
                     .padding()
                 }
-                .onChange(of: activeField) { field in
-                    if let field = field {
+                .onChange(of: activeField) { oldField, newField in
+                    if let field = newField {
                         // When field changes, scroll to keep active field visible
                         withAnimation {
                             if field == .confirmPassword {
@@ -109,27 +104,27 @@ struct ChangePasswordView: View {
                     // If success message is not empty, that means password change was successful
                     if !successMessage.isEmpty {
                         // Log the user out
-                        authService.signOut()
+                        try? viewModel.signOut()
                     }
                 }
             )
         }
         .navigationTitle("Change Password")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: newPassword) { value in
-            validatePassword(value)
+        .onChange(of: newPassword) { oldValue, newValue in
+            validatePassword(newValue)
         }
-        // Keyboard appearance monitoring
-        .onAppear {
-            NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { notification in
-                if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
-                    keyboardHeight = keyboardFrame.height
-                }
+        // Keyboard appearance monitoring. `.onReceive` closures run on the main
+        // actor (unlike NotificationCenter's @Sendable observer closures), so
+        // mutating `keyboardHeight` is data-race safe — and this doesn't leak
+        // observers the way addObserver(forName:) in onAppear would.
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+            if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                keyboardHeight = keyboardFrame.height
             }
-            
-            NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
-                keyboardHeight = 0
-            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardHeight = 0
         }
     }
     
@@ -192,12 +187,12 @@ struct ChangePasswordView: View {
         }
     }
     
-    private var errorSection: some View {
+    private func errorSection(error: Error) -> some View {
         HStack {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundColor(AppTheme.expenseColor)
             
-            Text(errorMessage)
+            Text(error.localizedDescription)
                 .font(.callout)
                 .foregroundColor(AppTheme.expenseColor)
                 .multilineTextAlignment(.leading)
@@ -262,7 +257,7 @@ struct ChangePasswordView: View {
         Button(action: {
             changePassword()
         }) {
-            if isLoading {
+            if viewModel.isLoading {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
             } else {
@@ -275,7 +270,7 @@ struct ChangePasswordView: View {
         .background(isPasswordValid() ? AppTheme.primaryGreen : AppTheme.primaryGreen.opacity(0.5))
         .foregroundColor(.white)
         .cornerRadius(12)
-        .disabled(!isPasswordValid() || isLoading)
+        .disabled(!isPasswordValid() || viewModel.isLoading)
     }
     
     // MARK: - Helper Components
@@ -361,66 +356,47 @@ struct ChangePasswordView: View {
         activeField = nil
         
         // Reset messages
-        errorMessage = ""
+        viewModel.error = nil
         successMessage = ""
         
         // Validate passwords match
-        if newPassword != confirmPassword {
-            errorMessage = "New password and confirmation do not match."
+        guard newPassword == confirmPassword else {
+            showAlert = true
+            alertTitle = "Password Mismatch"
+            alertMessage = "New password and confirmation do not match."
             return
         }
         
-        // Start loading state
-        isLoading = true
-        
-        // Use the AuthenticationService to change the password
-        // This uses Firebase Auth to update the password in the backend
-        authService.changePassword(currentPassword: currentPassword, newPassword: newPassword) { result in
-            DispatchQueue.main.async {
-                isLoading = false
-                
-                switch result {
-                case .success:
-                    // Clear password fields
-                    currentPassword = ""
-                    newPassword = ""
-                    confirmPassword = ""
-                    
-                    // Show success message
-                    successMessage = "Your password has been updated successfully. You will be logged out."
-                    
-                    // Also show alert for additional confirmation
-                    alertTitle = "Password Changed"
-                    alertMessage = "Your password has been changed successfully. You will be logged out now for security purposes."
-                    showAlert = true
-                    
-                case .failure(let error):
-                    handleAuthError(error)
-                }
-            }
+        // Validate password meets requirements
+        guard isPasswordValid() else {
+            showAlert = true
+            alertTitle = "Invalid Password"
+            alertMessage = "Password does not meet requirements"
+            return
         }
-    }
-    
-    private func handleAuthError(_ error: Error) {
-        // Handle specific Firebase Auth errors
-        let authError = error as NSError
-        if authError.domain == AuthErrorDomain {
-            switch authError.code {
-            case AuthErrorCode.wrongPassword.rawValue:
-                errorMessage = "Current password is incorrect."
-            case AuthErrorCode.tooManyRequests.rawValue:
-                errorMessage = "Too many attempts. Please try again later."
-            case AuthErrorCode.networkError.rawValue:
-                errorMessage = "Network error. Please check your connection."
-            case AuthErrorCode.weakPassword.rawValue:
-                errorMessage = "The password is too weak."
-            case AuthErrorCode.requiresRecentLogin.rawValue:
-                errorMessage = "This operation requires recent authentication. Please log in again."
-            default:
-                errorMessage = "Authentication error: \(error.localizedDescription)"
+        
+        Task {
+            await viewModel.changePassword(
+                currentPassword: currentPassword,
+                newPassword: newPassword
+            )
+            
+            if viewModel.error == nil {
+                // Clear password fields
+                currentPassword = ""
+                newPassword = ""
+                confirmPassword = ""
+                
+                // Show success message
+                successMessage = "Your password has been updated successfully. You will be logged out."
+                alertTitle = "Password Changed"
+                alertMessage = "Your password has been changed successfully. You will be logged out now for security purposes."
+                showAlert = true
+            } else {
+                showAlert = true
+                alertTitle = "Error"
+                alertMessage = viewModel.error?.localizedDescription ?? "Failed to change password"
             }
-        } else {
-            errorMessage = "Error: \(error.localizedDescription)"
         }
     }
 }

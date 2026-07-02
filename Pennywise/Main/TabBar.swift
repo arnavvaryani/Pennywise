@@ -7,11 +7,6 @@
 
 import SwiftUI
 
-struct TabItem {
-    let icon: String
-    let title: String
-}
-
 struct TabBar: View {
     @Binding var selectedTab: Int
     @State private var previousTab = 0
@@ -47,7 +42,7 @@ struct TabBar: View {
                 tabBarBackground
             )
         }
-        .onChange(of: selectedTab) { newValue in
+        .onChange(of: selectedTab) { oldValue, newValue in
             // If the "Add" tab is selected, show the transaction sheet
             // and revert to the previous tab
             if newValue == 2 {
@@ -138,7 +133,7 @@ struct TabBar: View {
     
     // Tab bar background with blur
     private var tabBarBackground: some View {
-           ZStack {
+           ZStack(alignment: .top) {
                // Use the same color as the navigation bar
                AppTheme.backgroundPrimary
                    .opacity(1.0)
@@ -147,26 +142,9 @@ struct TabBar: View {
                Rectangle()
                    .frame(height: 1)
                    .foregroundColor(AppTheme.accentPurple.opacity(0.2))
-                   .position(x: UIScreen.main.bounds.width / 2, y: 0.5)
            }
            .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: -5)
            .edgesIgnoringSafeArea(.all)
        }
-}
-
-
-// Preview
-struct FixedTabBar_Previews: PreviewProvider {
-    static var previews: some View {
-        ZStack {
-            Color.black.edgesIgnoringSafeArea(.all)
-            
-            VStack {
-                Spacer()
-                
-                TabBar(selectedTab: .constant(0), showAddTransaction: .constant(false))
-            }
-        }
-    }
 }
 

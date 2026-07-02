@@ -9,8 +9,11 @@ import SwiftUI
 
 struct AddBudgetCategoryView: View {
     let onAdd: (BudgetCategory) -> Void
-    
-    @Environment(\.presentationMode) var presentationMode
+    /// The user's real monthly income, used to suggest budget amounts.
+    /// Defaults to 0 (unknown) — in that case no amount is pre-filled.
+    var monthlyIncome: Double = 0
+
+    @Environment(\.dismiss) var dismiss
     @State private var categoryName = ""
     @State private var amount = ""
     @State private var selectedIcon = "tag.fill"
@@ -19,49 +22,46 @@ struct AddBudgetCategoryView: View {
     @State private var selectedPredefinedCategory: PredefinedCategory?
     
     // Get predefined categories from the system
-    let predefinedCategories = BudgetCategorySystem.shared.predefinedCategories
+    let predefinedCategories = CategoryMappingSystem.defaultCategories
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                // Background gradient
-                AppTheme.backgroundGradient
-                    .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Predefined categories section
-                        if !showCustomCategory {
-                            predefinedCategoriesSection
-                        }
-                        
-                        // Custom category details section
-                        if showCustomCategory || selectedPredefinedCategory != nil {
-                            categoryDetailsSection
-                        }
+        ZStack {
+            // Background gradient
+            AppTheme.enhancedBackgroundGradient
+            
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Predefined categories section
+                    if !showCustomCategory {
+                        predefinedCategoriesSection
                     }
-                    .padding(16)
+                    
+                    // Custom category details section
+                    if showCustomCategory || selectedPredefinedCategory != nil {
+                        categoryDetailsSection
+                    }
                 }
+                .padding(16)
             }
-            .navigationTitle(showCustomCategory ? "Custom Category" : "Add Category")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                    .foregroundColor(AppTheme.primaryGreen)
+        }
+        .navigationTitle(showCustomCategory ? "Custom Category" : "Add Category")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Cancel") {
+                    dismiss()
                 }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveCategory()
-                    }
-                    .foregroundColor(AppTheme.primaryGreen)
-                    .fontWeight(.semibold)
-                    .disabled(!isSaveEnabled)
-                    .opacity(isSaveEnabled ? 1.0 : 0.5)
+                .foregroundColor(AppTheme.primaryGreen)
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Save") {
+                    saveCategory()
                 }
+                .foregroundColor(AppTheme.primaryGreen)
+                .fontWeight(.semibold)
+                .disabled(!isSaveEnabled)
+                .opacity(isSaveEnabled ? 1.0 : 0.5)
             }
         }
     }
@@ -113,13 +113,12 @@ struct AddBudgetCategoryView: View {
                     }
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity)
-                    .background(AppTheme.cardBackground.opacity(0.5))
-                    .cornerRadius(12)
+                    // Match the transparent predefined chips (no nested fill);
+                    // the surrounding panel provides the Liquid Glass surface.
                 }
             }
             .padding()
-            .background(AppTheme.cardBackground.opacity(0.5))
-            .cornerRadius(16)
+            .pwGlassSurface(cornerRadius: 16)
         }
     }
     
@@ -133,20 +132,21 @@ struct AddBudgetCategoryView: View {
             selectedIcon = category.icon
             selectedColor = category.color
 
-            let assumedIncome = 5000.0
-            let suggestedAmount: Double
-            
-            if category.name == "Housing" {
-                suggestedAmount = assumedIncome * 0.3
-            } else if category.name == "Groceries" {
-                suggestedAmount = assumedIncome * 0.1
-            } else if category.isEssential {
-                suggestedAmount = assumedIncome * 0.05
-            } else {
-                suggestedAmount = assumedIncome * 0.03
+            // Suggest an amount as a share of the user's real monthly income.
+            // If income is unknown (0), leave the amount blank for the user.
+            if monthlyIncome > 0 {
+                let suggestedAmount: Double
+                if category.name == "Housing" {
+                    suggestedAmount = monthlyIncome * 0.3
+                } else if category.name == "Groceries" {
+                    suggestedAmount = monthlyIncome * 0.1
+                } else if category.isEssential {
+                    suggestedAmount = monthlyIncome * 0.05
+                } else {
+                    suggestedAmount = monthlyIncome * 0.03
+                }
+                amount = String(format: "%.0f", suggestedAmount)
             }
-            
-            amount = String(format: "%.0f", suggestedAmount)
         }) {
             VStack(spacing: 12) {
                 ZStack {
@@ -201,8 +201,7 @@ struct AddBudgetCategoryView: View {
                         
                         TextField("", text: $categoryName)
                             .padding()
-                            .background(AppTheme.cardBackground)
-                            .cornerRadius(12)
+                            .pwGlassSurface(cornerRadius: 12)
                             .foregroundColor(AppTheme.textColor)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
@@ -227,12 +226,7 @@ struct AddBudgetCategoryView: View {
                             .foregroundColor(AppTheme.textColor)
                             .padding(.vertical, 16)
                     }
-                    .background(AppTheme.cardBackground)
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(AppTheme.cardStroke, lineWidth: 1)
-                    )
+                    .pwGlassSurface(cornerRadius: 12)
                 }
                 
                 // Only show icon and color pickers for custom category
@@ -297,11 +291,10 @@ struct AddBudgetCategoryView: View {
                 }
             }
             .padding(16)
-            .background(AppTheme.cardBackground.opacity(0.5))
-            .cornerRadius(16)
+            .pwGlassSurface(cornerRadius: 16)
         }
     }
-    
+
     // MARK: - Helper Methods
     
     // Save the new category
@@ -312,18 +305,22 @@ struct AddBudgetCategoryView: View {
             if showCustomCategory {
                 // Custom category
                 newCategory = BudgetCategory(
+                    id: UUID().uuidString,
                     name: categoryName,
                     amount: amountValue,
                     icon: selectedIcon,
-                    color: selectedColor
+                    colorHex: selectedColor.hexString,
+                    isEssential: false
                 )
             } else if let predefined = selectedPredefinedCategory {
                 // Predefined category
                 newCategory = BudgetCategory(
+                    id: UUID().uuidString,
                     name: predefined.name,
                     amount: amountValue,
                     icon: predefined.icon,
-                    color: predefined.color
+                    colorHex: predefined.color.hexString,
+                    isEssential: predefined.isEssential
                 )
             } else {
                 // Should never happen due to disabled Save button
@@ -331,7 +328,7 @@ struct AddBudgetCategoryView: View {
             }
             
             onAdd(newCategory)
-            presentationMode.wrappedValue.dismiss()
+            dismiss()
         }
     }
     
